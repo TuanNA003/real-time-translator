@@ -2,210 +2,57 @@ import React, { useState, useRef, useEffect } from 'react';
 import LanguageSelector from './LanguageSelector';
 import TranslationPanel from './TranslationPanel';
 
-// Complete NLLB language mapping
 const languages = {
-    'Acehnese (Arabic)': 'ace_Arab',
-    'Acehnese (Latin)': 'ace_Latn', 
-    'Arabic (Mesopotamian)': 'acm_Arab',
-    'Arabic (Ta\'izzi-Adeni)': 'acq_Arab',
-    'Arabic (Tunisian)': 'aeb_Arab',
-    'Afrikaans': 'afr_Latn',
-    'Arabic (South Levantine)': 'ajp_Arab',
-    'Akan': 'aka_Latn',
-    'Amharic': 'amh_Ethi',
-    'Arabic (North Levantine)': 'apc_Arab',
-    'Arabic (Standard)': 'arb_Arab',
-    'Arabic (Najdi)': 'ars_Arab',
-    'Arabic (Moroccan)': 'ary_Arab',
-    'Arabic (Egyptian)': 'arz_Arab',
-    'Assamese': 'asm_Beng',
-    'Asturian': 'ast_Latn',
-    'Awadhi': 'awa_Deva',
-    'Aymara': 'ayr_Latn',
-    'Azerbaijani (South)': 'azb_Arab',
-    'Azerbaijani (North)': 'azj_Latn',
-    'Bashkir': 'bak_Cyrl',
-    'Bambara': 'bam_Latn',
-    'Balinese': 'ban_Latn',
-    'Belarusian': 'bel_Cyrl',
-    'Bemba': 'bem_Latn',
-    'Bengali': 'ben_Beng',
-    'Bhojpuri': 'bho_Deva',
-    'Banjar (Arabic)': 'bjn_Arab',
-    'Banjar (Latin)': 'bjn_Latn',
-    'Tibetan': 'bod_Tibt',
-    'Bosnian': 'bos_Latn',
-    'Buginese': 'bug_Latn',
-    'Bulgarian': 'bul_Cyrl',
-    'Catalan': 'cat_Latn',
-    'Cebuano': 'ceb_Latn',
-    'Czech': 'ces_Latn',
-    'Chokwe': 'cjk_Latn',
-    'Kurdish (Central)': 'ckb_Arab',
-    'Crimean Tatar': 'crh_Latn',
-    'Welsh': 'cym_Latn',
-    'Danish': 'dan_Latn',
-    'German': 'deu_Latn',
-    'Dinka': 'dik_Latn',
-    'Dyula': 'dyu_Latn',
-    'Dzongkha': 'dzo_Tibt',
-    'Greek': 'ell_Grek',
-    'English': 'eng_Latn',
-    'Esperanto': 'epo_Latn',
-    'Estonian': 'est_Latn',
-    'Basque': 'eus_Latn',
-    'Ewe': 'ewe_Latn',
-    'Faroese': 'fao_Latn',
-    'Persian': 'pes_Arab',
-    'Fijian': 'fij_Latn',
-    'Finnish': 'fin_Latn',
-    'Fon': 'fon_Latn',
-    'French': 'fra_Latn',
-    'Friulian': 'fur_Latn',
-    'Nigerian Fulfulde': 'fuv_Latn',
-    'Scottish Gaelic': 'gla_Latn',
-    'Irish': 'gle_Latn',
-    'Galician': 'glg_Latn',
-    'Guarani': 'grn_Latn',
-    'Gujarati': 'guj_Gujr',
-    'Haitian Creole': 'hat_Latn',
-    'Hausa': 'hau_Latn',
-    'Hebrew': 'heb_Hebr',
-    'Hindi': 'hin_Deva',
-    'Chhattisgarhi': 'hne_Deva',
-    'Croatian': 'hrv_Latn',
-    'Hungarian': 'hun_Latn',
-    'Armenian': 'hye_Armn',
-    'Igbo': 'ibo_Latn',
-    'Ilocano': 'ilo_Latn',
-    'Indonesian': 'ind_Latn',
-    'Icelandic': 'isl_Latn',
-    'Italian': 'ita_Latn',
-    'Javanese': 'jav_Latn',
-    'Japanese': 'jpn_Jpan',
-    'Kabyle': 'kab_Latn',
-    'Jingpho': 'kac_Latn',
-    'Kamba': 'kam_Latn',
-    'Kannada': 'kan_Knda',
-    'Kashmiri (Arabic)': 'kas_Arab',
-    'Kashmiri (Devanagari)': 'kas_Deva',
-    'Georgian': 'kat_Geor',
-    'Kanuri (Arabic)': 'knc_Arab',
-    'Kanuri (Latin)': 'knc_Latn',
-    'Kazakh': 'kaz_Cyrl',
-    'Kabiyè': 'kbp_Latn',
-    'Kabuverdianu': 'kea_Latn',
-    'Khmer': 'khm_Khmr',
-    'Kikuyu': 'kik_Latn',
-    'Kinyarwanda': 'kin_Latn',
-    'Kyrgyz': 'kir_Cyrl',
-    'Kimbundu': 'kmb_Latn',
-    'Kongo': 'kon_Latn',
-    'Korean': 'kor_Hang',
-    'Kurdish (Northern)': 'kmr_Latn',
-    'Lao': 'lao_Laoo',
-    'Latvian': 'lvs_Latn',
-    'Ligurian': 'lij_Latn',
-    'Limburgish': 'lim_Latn',
-    'Lingala': 'lin_Latn',
-    'Lithuanian': 'lit_Latn',
-    'Lombard': 'lmo_Latn',
-    'Latgalian': 'ltg_Latn',
-    'Luxembourgish': 'ltz_Latn',
-    'Luba-Kasai': 'lua_Latn',
-    'Ganda': 'lug_Latn',
-    'Luo': 'luo_Latn',
-    'Mizo': 'lus_Latn',
-    'Magahi': 'mag_Deva',
-    'Maithili': 'mai_Deva',
-    'Malayalam': 'mal_Mlym',
-    'Marathi': 'mar_Deva',
-    'Minangkabau': 'min_Latn',
-    'Macedonian': 'mkd_Cyrl',
-    'Plateau Malagasy': 'plt_Latn',
-    'Maltese': 'mlt_Latn',
-    'Manipuri': 'mni_Beng',
-    'Mongolian': 'khk_Cyrl',
-    'Mossi': 'mos_Latn',
-    'Māori': 'mri_Latn',
-    'Malay': 'zsm_Latn',
-    'Burmese': 'mya_Mymr',
-    'Dutch': 'nld_Latn',
-    'Norwegian Nynorsk': 'nno_Latn',
-    'Norwegian Bokmål': 'nob_Latn',
-    'Nepali': 'npi_Deva',
-    'Northern Sotho': 'nso_Latn',
-    'Nuer': 'nus_Latn',
-    'Nyanja': 'nya_Latn',
-    'Occitan': 'oci_Latn',
-    'West Central Oromo': 'gaz_Latn',
-    'Odia': 'ory_Orya',
-    'Pangasinan': 'pag_Latn',
-    'Punjabi': 'pan_Guru',
-    'Papiamento': 'pap_Latn',
-    'Polish': 'pol_Latn',
-    'Portuguese': 'por_Latn',
-    'Persian (Dari)': 'prs_Arab',
-    'Pashto': 'pbt_Arab',
-    'Quechua': 'quy_Latn',
-    'Romanian': 'ron_Latn',
-    'Rundi': 'run_Latn',
-    'Russian': 'rus_Cyrl',
-    'Sango': 'sag_Latn',
-    'Sanskrit': 'san_Deva',
-    'Santali': 'sat_Beng',
-    'Sicilian': 'scn_Latn',
-    'Shan': 'shn_Mymr',
-    'Sinhala': 'sin_Sinh',
-    'Slovak': 'slk_Latn',
-    'Slovenian': 'slv_Latn',
-    'Samoan': 'smo_Latn',
-    'Shona': 'sna_Latn',
-    'Sindhi': 'snd_Arab',
-    'Somali': 'som_Latn',
-    'Southern Sotho': 'sot_Latn',
-    'Spanish': 'spa_Latn',
-    'Albanian (Tosk)': 'als_Latn',
-    'Sardinian': 'srd_Latn',
-    'Serbian': 'srp_Cyrl',
-    'Swati': 'ssw_Latn',
-    'Sundanese': 'sun_Latn',
-    'Swedish': 'swe_Latn',
-    'Swahili': 'swh_Latn',
-    'Silesian': 'szl_Latn',
-    'Tamil': 'tam_Taml',
-    'Tatar': 'tat_Cyrl',
-    'Telugu': 'tel_Telu',
-    'Tajik': 'tgk_Cyrl',
-    'Tagalog': 'tgl_Latn',
-    'Thai': 'tha_Thai',
-    'Tigrinya': 'tir_Ethi',
-    'Tamasheq (Latin)': 'taq_Latn',
-    'Tamasheq (Tifinagh)': 'taq_Tfng',
-    'Tok Pisin': 'tpi_Latn',
-    'Tswana': 'tsn_Latn',
-    'Tsonga': 'tso_Latn',
-    'Turkmen': 'tuk_Latn',
-    'Tumbuka': 'tum_Latn',
-    'Turkish': 'tur_Latn',
-    'Twi': 'twi_Latn',
-    'Central Atlas Tamazight': 'tzm_Tfng',
-    'Uyghur': 'uig_Arab',
-    'Ukrainian': 'ukr_Cyrl',
-    'Umbundu': 'umb_Latn',
-    'Urdu': 'urd_Arab',
-    'Uzbek (Northern)': 'uzn_Latn',
-    'Venetian': 'vec_Latn',
-    'Vietnamese': 'vie_Latn',
-    'Waray': 'war_Latn',
-    'Wolof': 'wol_Latn',
-    'Xhosa': 'xho_Latn',
-    'Yiddish': 'ydd_Hebr',
-    'Yoruba': 'yor_Latn',
-    'Cantonese': 'yue_Hant',
-    'Chinese (Simplified)': 'zho_Hans',
-    'Chinese (Traditional)': 'zho_Hant',
-    'Zulu': 'zul_Latn'
+    'English': 'en',
+    'Vietnamese': 'vi',
+    'German': 'de',
+    'French': 'fr',
+    'Spanish': 'es',
+    'Chinese (Simplified)': 'zh-cn',
+    'Chinese (Traditional)': 'zh-tw',
+    'Japanese': 'ja',
+    'Korean': 'ko',
+    'Russian': 'ru',
+    'Arabic': 'ar',
+    'Thai': 'th',
+    'Indonesian': 'id',
+    'Portuguese': 'pt',
+    'Italian': 'it',
+    'Dutch': 'nl',
+    'Turkish': 'tr',
+    'Polish': 'pl',
+    'Swedish': 'sv',
+    'Norwegian': 'no',
+    'Danish': 'da',
+    'Finnish': 'fi',
+    'Greek': 'el',
+    'Hebrew': 'he',
+    'Hindi': 'hi',
+    'Malay': 'ms',
+    'Filipino': 'tl',
+    'Czech': 'cs',
+    'Hungarian': 'hu',
+    'Romanian': 'ro',
+    'Ukrainian': 'uk',
+    'Bulgarian': 'bg',
+    'Croatian': 'hr',
+    'Slovak': 'sk',
+    'Persian': 'fa',
+    'Urdu': 'ur',
+    'Bengali': 'bn',
+    'Tamil': 'ta',
+    'Telugu': 'te',
+    'Marathi': 'mr',
+    'Gujarati': 'gu',
+    'Kannada': 'kn',
+    'Malayalam': 'ml',
+    'Punjabi': 'pa',
+    'Nepali': 'ne',
+    'Khmer': 'km',
+    'Lao': 'lo',
+    'Burmese': 'my',
+    'Swahili': 'sw',
+    'Hausa': 'ha',
 };
 
 const languageNames = Object.keys(languages);
@@ -316,7 +163,7 @@ const useAudioCapture = () => {
                 throw new Error(`Browser compatibility issues: ${supportIssues.join(', ')}`);
             }
 
-            console.log('🎤 Requesting display media with audio...');
+            console.log('Requesting display media with audio...');
             
             // Request screen share with audio
             const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -328,7 +175,7 @@ const useAudioCapture = () => {
                 }
             });
 
-            console.log('📺 Display media obtained, checking audio tracks...');
+            console.log('Display media obtained, checking audio tracks...');
 
             // Check if audio track is available
             const audioTracks = stream.getAudioTracks();
@@ -336,7 +183,7 @@ const useAudioCapture = () => {
                 throw new Error('No audio track available. Please ensure "Share system audio" is enabled.');
             }
 
-            console.log(`🔊 Audio tracks found: ${audioTracks.length}`);
+            console.log(`Audio tracks found: ${audioTracks.length}`);
             audioTracks.forEach((track, index) => {
                 console.log(`Track ${index}:`, track.label, track.kind, track.enabled);
             });
@@ -345,7 +192,7 @@ const useAudioCapture = () => {
             setIsCapturing(true);
 
             // Set up Web Audio API for real-time processing
-            console.log('🎛️ Setting up Web Audio API processing...');
+            console.log('Setting up Web Audio API processing...');
             audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
             
             // Create audio source from stream
@@ -375,7 +222,7 @@ const useAudioCapture = () => {
                 
                 // Process every 3 seconds worth of audio
                 if (chunkCount >= CHUNKS_PER_BATCH) {
-                    console.log('🔄 Processing audio batch...');
+                    console.log('Processing audio batch...');
                     processAudioChunks([...audioChunks], onAudioProcessed);
                     audioChunks.length = 0; // Clear chunks
                     chunkCount = 0;
@@ -389,17 +236,17 @@ const useAudioCapture = () => {
             // Store processor reference for cleanup
             mediaRecorderRef.current = processor;
 
-            console.log('✅ System audio capture started with Web Audio API');
+            console.log('System audio capture started with Web Audio API');
             return stream;
         } catch (error) {
-            console.error('❌ Failed to capture system audio:', error);
+            console.error('Failed to capture system audio:', error);
             throw error;
         }
     };
 
     const processAudioChunks = async (chunks, onAudioProcessed) => {
         try {
-            console.log(`� Processing ${chunks.length} audio chunks`);
+            console.log(`Processing ${chunks.length} audio chunks`);
             
             // Combine all chunks into a single buffer
             const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -501,7 +348,7 @@ const useAudioCapture = () => {
         }
         
         setIsCapturing(false);
-        console.log('🛑 Audio capture stopped');
+        console.log('Audio capture stopped');
     };
 
     return {
@@ -544,7 +391,7 @@ function TranslatorApp() {
     // Language change handlers with validation
     const handleSourceLanguageChange = (newLang) => {
         if (newLang === targetLang) {
-            setStatusMessage('⚠️ Source and target languages cannot be the same. Please select different languages.');
+            setStatusMessage('Source and target languages cannot be the same. Please select different languages.');
             return;
         }
         setSourceLang(newLang);
@@ -560,7 +407,7 @@ function TranslatorApp() {
 
     const handleTargetLanguageChange = (newLang) => {
         if (newLang === sourceLang) {
-            setStatusMessage('⚠️ Source and target languages cannot be the same. Please select different languages.');
+            setStatusMessage('Source and target languages cannot be the same. Please select different languages.');
             return;
         }
         setTargetLang(newLang);
@@ -581,9 +428,9 @@ function TranslatorApp() {
         setCaptureMode(newMode);
         
         if (newMode === 'system') {
-            setStatusMessage('📺 System audio mode selected. Click "Start Capturing" to capture meeting audio.');
+            setStatusMessage('System audio mode selected. Click "Start Capturing" to capture meeting audio.');
         } else {
-            setStatusMessage('🎤 Microphone mode selected. Click "Start Listening" to capture your voice.');
+            setStatusMessage('Microphone mode selected. Click "Start Listening" to capture your voice.');
         }
     };
 
@@ -623,7 +470,7 @@ function TranslatorApp() {
     // Handle system audio processing via server-side speech recognition
     const handleSystemAudioProcessing = async (base64Audio) => {
         try {
-            setStatusMessage('🔄 Processing captured audio...');
+            setStatusMessage('Processing captured audio...');
             
             const response = await fetch('http://localhost:8000/api/transcribe-and-translate', {
                 method: 'POST',
@@ -653,9 +500,9 @@ function TranslatorApp() {
                     setTranslatedText(data.translated_text);
                 }
                 
-                setStatusMessage('🎵 Capturing system audio... (Processing live audio)');
+                setStatusMessage('Capturing system audio... (Processing live audio)');
             } else {
-                setStatusMessage('🎵 Capturing system audio... (Listening for speech)');
+                setStatusMessage('Capturing system audio... (Listening for speech)');
             }
 
         } catch (error) {
@@ -770,9 +617,9 @@ function TranslatorApp() {
             try {
                 if (captureMode === 'system') {
                     // Start system audio capture with processing callback
-                    setStatusMessage('🔄 Starting system audio capture...');
+                    setStatusMessage('Starting system audio capture...');
                     await startSystemAudioCapture(handleSystemAudioProcessing);
-                    setStatusMessage('🎵 Capturing system audio. Processing speech from all participants...');
+                    setStatusMessage('Capturing system audio. Processing speech from all participants...');
                 } else {
                     // Start microphone capture (existing functionality)
                     setShouldContinueListening(true);
@@ -784,7 +631,7 @@ function TranslatorApp() {
                     recognition.start();
                 }
             } catch (error) {
-                setStatusMessage(`❌ Error: ${error.message}`);
+                setStatusMessage(`Error: ${error.message}`);
             }
         }
     };
@@ -851,11 +698,11 @@ function TranslatorApp() {
                     {captureMode === 'system' && (
                         <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
                             <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                                <strong>📋 Instructions:</strong> When prompted, select "Share system audio" or your meeting tab/window. 
+                                <strong>Instructions:</strong> When prompted, select "Share system audio" or your meeting tab/window. 
                                 This captures all participants' audio for translation.
                             </p>
                             <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                                ⚠️ Note: System audio requires server-side speech processing for full functionality.
+                                Note: System audio requires server-side speech processing for full functionality.
                             </p>
                         </div>
                     )}
