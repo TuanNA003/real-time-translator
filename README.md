@@ -7,11 +7,12 @@ Speak, type, or share a meeting tab. The other side writes itself, line by line.
 - **Part 3:** restore punctuation + capitalization on each line
 - **Part 4:** hear the translation (xAI TTS, browser speech fallback)
 - **Part 5:** keep the session — autosave, history, restore, download
+- **Devices:** pick a headset / USB mic to listen from, and speakers / headphones to play through
 
 ## Stack
 
-- **Frontend:** React 19, Vite, Tailwind CSS 4, Web Speech API, getDisplayMedia, speechSynthesis
-- **Backend:** FastAPI. Translate via Google gtx (MyMemory fallback). Meeting STT via `XAI_API_KEY` or optional Whisper. Punctuate / TTS via xAI when the key is set.
+- **Frontend:** React 19, Vite, Tailwind CSS 4, Web Speech API, getUserMedia, getDisplayMedia, speechSynthesis
+- **Backend:** FastAPI. Translate via Google gtx (MyMemory fallback). Meeting / device-mic STT via `XAI_API_KEY` or optional Whisper. Punctuate / TTS via xAI when the key is set.
 
 ## Run locally (VS Code)
 
@@ -55,17 +56,19 @@ Chrome: http://localhost:5173 — keep both terminals running.
 
 ## What to test
 
-1. Mic: Start, speak a sentence. The source line should come back punctuated.
-2. Type a line without punctuation (`hello how are you`) and send.
-3. Press the speaker on a translation, or turn on read-aloud (volume icon).
-4. Meeting tab: Start, pick a Chrome tab, enable Share tab audio.
-5. Clip: in Meeting mode, *Or transcribe a clip*.
-6. Clear — the session lands in History. Restore it. Download `.txt`.
+1. **Listen from:** Browser microphone (live captions) or a named headset / USB mic.
+2. **Play through:** system default, speakers, or headphones — then press the speaker on a translation.
+3. Mic: Start, speak a sentence. The source line should come back punctuated.
+4. Type a line without punctuation (`hello how are you`) and send.
+5. Meeting tab: Start, pick a Chrome tab, enable Share tab audio (this is how you caption *speakers* / a call).
+6. Clip: in Meeting mode, *Or transcribe a clip*.
+7. Clear — the session lands in History. Restore it. Download `.txt`.
 
 Default languages for meetings: English heard to Vietnamese written (swap anytime).
 
 ## Notes
 
-- Tab capture needs Chrome and a tick on share-audio. The in-chat preview often blocks this picker; VS Code + Chrome is the real test.
-- Web Speech API is mic-only. Meeting audio cannot use it — that is why Part 2 sends audio to the backend.
+- Browsers cannot capture the speakers themselves as a microphone. Use **Meeting tab** (share tab audio) or an OS loopback device that appears in **Listen from**.
+- A chosen hardware mic is transcribed in ~3s slices. Live captions stay on *Browser microphone*.
+- Tab capture needs Chrome and a tick on share-audio.
 - Sessions live in `localStorage` on this browser only (no accounts).

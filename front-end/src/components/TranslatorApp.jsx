@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   Copy,
   Download,
+  Headphones,
   History,
   Mic,
   MicOff,
@@ -27,6 +28,8 @@ import {
   sessionPreview,
 } from '../lib/history';
 import { playSpeech, stopSpeech } from '../lib/playSpeech';
+import { BROWSER_MIC_ID, DEFAULT_OUTPUT_ID, useAudioDevices } from '../hooks/useAudioDevices';
+import { useMicAudio } from '../hooks/useMicAudio';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useTabAudio } from '../hooks/useTabAudio';
 
@@ -43,6 +46,27 @@ function LanguageField({ id, label, value, exclude, onChange }) {
         {LANGUAGES.filter((lang) => lang.id !== exclude).map((lang) => (
           <option key={lang.id} value={lang.id}>
             {lang.native}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DeviceField({ id, label, value, options, onChange, onFocus }) {
+  return (
+    <label className="flex min-w-0 flex-1 flex-col gap-2">
+      <span className="text-xs font-medium tracking-wide text-fg-subtle uppercase">{label}</span>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => onFocus?.()}
+        className="h-11 w-full appearance-none rounded-md border border-border bg-surface px-3 text-sm text-fg outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {options.map((device) => (
+          <option key={device.id} value={device.id}>
+            {device.label}
           </option>
         ))}
       </select>
@@ -72,7 +96,7 @@ export default function TranslatorApp() {
   const [lines, setLines] = useState([]);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('mic');
-  const [status, setStatus] = useState('Mic, meeting, then hear and keep the session.');
+  const [status, setStatus] = useState('Choose a mic, a headset, or a meeting tab.');
   const [readAloud, setReadAloud] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
@@ -82,6 +106,8 @@ export default function TranslatorApp() {
   const target = languageById(targetId);
   const speech = useSpeechRecognition(source.speech);
   const tab = useTabAudio();
+  const mic = useMicAudio();
+  const devices = useAudioDevices();
   const translatingRef = useRef(false);
   const transcribingRef = useRef(false);
   const queueRef = useRef([]);
@@ -92,10 +118,13 @@ export default function TranslatorApp() {
   const sourceCodeRef = useRef(source.translate);
   const targetCodeRef = useRef(target.translate);
   const targetSpeechRef = useRef(target.speech);
+  const outputIdRef = useRef(devices.outputId);
   sourceCodeRef.current = source.translate;
   targetCodeRef.current = target.translate;
   targetSpeechRef.current = target.speech;
-  const live = speech.listening || tab.capturing;
+  outputIdRef.current = devices.outputId;
+  const live = speech.listening || tab.capturing || mic.capturing;
+  const usingDeviceMic = mode === 'mic' && !devices.usingBrowserMic;
 
   useEffect(() => {
     const draft = loadCurrent();
@@ -123,7 +152,7 @@ export default function TranslatorApp() {
     setSpeakingId(line.id);
     setStatus('Reading translation…');
     try {
-      await playSpeech(line.target, targetCodeRef.current, targetSpeechRef.current);
+      await playSpeech(line.target, targetCodeRef.current, targetSpeechRef.current, outputIdRef.current);
       setStatus('Ready');
     } catch {
       setStatus('Could not play audio.');
@@ -166,7 +195,7 @@ export default function TranslatorApp() {
     setBusy(true);
     while (audioQueueRef.current.length) {
       const next = audioQueueRef.current.shift();
-      setStatus('Transcribing meeting audio…');
+      setStatus('Transcribing…');
       const result = await transcribeAndTranslate({
         audioBase64: next.base64,
         mime: next.mime,
@@ -178,15 +207,15 @@ export default function TranslatorApp() {
         continue;
       }
       if (!result.transcribed) {
-        setStatus('Capturing tab audio…');
+        setStatus(mode === 'meeting' ? 'Capturing tab audio…' : 'Listening');
         continue;
       }
       setLines((prev) => [...prev, { id: crypto.randomUUID(), source: result.transcribed, target: result.translated }]);
-      setStatus('Capturing tab audio…');
+      setStatus(mode === 'meeting' ? 'Capturing tab audio…' : 'Listening');
     }
     transcribingRef.current = false;
     setBusy(false);
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     speech.setOnFinal((text) => {
@@ -201,6 +230,12 @@ export default function TranslatorApp() {
   }, [tab, handleAudioChunk]);
 
   useEffect(() => {
+    mic.setOnChunk((base64, mime) => {
+      void handleAudioChunk(base64, mime);
+    });
+  }, [mic, handleAudioChunk]);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [lines, speech.interim]);
 
@@ -212,28 +247,59 @@ export default function TranslatorApp() {
     void speakLine(last);
   }, [lines, readAloud, speakLine]);
 
-  const setCaptureMode = (next) => {
-    if (next === mode) return;
+  const stopAllCapture = () => {
     speech.stop();
     tab.stop();
-    setMode(next);
-    setStatus(next === 'mic' ? 'Microphone — speak after Start.' : 'Meeting — share a tab and enable audio.');
+    mic.stop();
   };
 
-  const toggleCapture = async () => {
-    if (live) {
-      speech.stop();
-      tab.stop();
-      setStatus('Paused');
-      return;
-    }
-    if (mode === 'mic') {
+  const setCaptureMode = (next) => {
+    if (next === mode) return;
+    stopAllCapture();
+    setMode(next);
+    setStatus(next === 'mic' ? 'Microphone — pick a device, then Start.' : 'Meeting — share a tab and enable audio.');
+  };
+
+  const startMicCapture = async () => {
+    await devices.ensurePermission();
+    if (devices.usingBrowserMic) {
       speech.start();
       setStatus('Listening');
       return;
     }
+    const ok = await mic.start(devices.inputId);
+    if (ok) setStatus(`Listening · ${devices.inputLabel}`);
+  };
+
+  const toggleCapture = async () => {
+    if (live) {
+      stopAllCapture();
+      setStatus('Paused');
+      return;
+    }
+    if (mode === 'mic') {
+      await startMicCapture();
+      return;
+    }
     await tab.start();
     setStatus('Share a Chrome tab and tick Share audio.');
+  };
+
+  const changeInput = (id) => {
+    devices.setInputId(id);
+    if (mode !== 'mic' || !live) return;
+    stopAllCapture();
+    window.setTimeout(() => {
+      void (async () => {
+        if (id === BROWSER_MIC_ID) {
+          speech.start();
+          setStatus('Listening');
+          return;
+        }
+        const ok = await mic.start(id);
+        if (ok) setStatus('Listening');
+      })();
+    }, 80);
   };
 
   const toggleReadAloud = () => {
@@ -274,8 +340,7 @@ export default function TranslatorApp() {
   };
 
   const reset = () => {
-    speech.stop();
-    tab.stop();
+    stopAllCapture();
     stopSpeech();
     if (lines.length) setSessions(archiveDraft({ sourceId, targetId, lines }));
     setLines([]);
@@ -298,14 +363,21 @@ export default function TranslatorApp() {
     setSessions(deleteSession(id));
   };
 
+  const inputOptions = [{ id: BROWSER_MIC_ID, label: 'Browser microphone (live)' }, ...devices.inputs];
+  if (devices.inputId !== BROWSER_MIC_ID && !inputOptions.some((d) => d.id === devices.inputId)) {
+    inputOptions.push({ id: devices.inputId, label: devices.inputLabel });
+  }
+  const selectedInput = inputOptions.some((d) => d.id === devices.inputId) ? devices.inputId : BROWSER_MIC_ID;
+  const selectedOutput = devices.outputs.some((d) => d.id === devices.outputId) ? devices.outputId : DEFAULT_OUTPUT_ID;
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 py-6 sm:px-8 sm:py-10">
       <header className="mb-8 flex items-end justify-between gap-4">
         <div>
-          <p className="mb-2 font-mono text-[11px] tracking-[0.22em] text-sage uppercase">Part 5 · Keep & hear</p>
+          <p className="mb-2 font-mono text-[11px] tracking-[0.22em] text-sage uppercase">Listen from any device</p>
           <h1 className="font-display text-4xl leading-none tracking-tight text-fg sm:text-5xl">Lời</h1>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-fg-muted">
-            Punctuate the line, hear the other side, keep the session.
+            Pick a mic or headset to speak. Share a tab to caption speakers. Play the other side through headphones.
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -356,6 +428,27 @@ export default function TranslatorApp() {
           </button>
           <LanguageField id="target-lang" label="Written as" value={targetId} exclude={sourceId} onChange={setTargetId} />
         </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          {mode === 'mic' ? (
+            <DeviceField
+              id="audio-input"
+              label="Listen from"
+              value={selectedInput}
+              options={inputOptions}
+              onChange={changeInput}
+              onFocus={() => void devices.ensurePermission()}
+            />
+          ) : (
+            <label className="flex min-w-0 flex-1 flex-col gap-2">
+              <span className="text-xs font-medium tracking-wide text-fg-subtle uppercase">Listen from</span>
+              <div className="flex h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm text-fg">
+                <Monitor className="size-4 text-fg-subtle" />
+                This Chrome tab
+              </div>
+            </label>
+          )}
+          <DeviceField id="audio-output" label="Play through" value={selectedOutput} options={devices.outputs} onChange={devices.setOutputId} />
+        </div>
         <div className="mt-5 flex flex-col items-center gap-3 border-t border-border pt-5">
           <div className="relative">
             {live ? <span className="live-ring absolute inset-0 rounded-full border border-live" aria-hidden /> : null}
@@ -366,13 +459,24 @@ export default function TranslatorApp() {
               aria-pressed={live}
               aria-label={live ? 'Stop' : 'Start'}
             >
-              {live ? <MicOff className="size-6" /> : mode === 'mic' ? <Mic className="size-6" /> : <Monitor className="size-6" />}
+              {live ? (
+                <MicOff className="size-6" />
+              ) : mode === 'mic' ? (
+                usingDeviceMic ? <Headphones className="size-6" /> : <Mic className="size-6" />
+              ) : (
+                <Monitor className="size-6" />
+              )}
             </button>
           </div>
           <p className="max-w-md text-center font-mono text-xs tracking-wide text-fg-subtle" aria-live="polite">
-            {speech.error ?? tab.error ?? status}
+            {speech.error ?? tab.error ?? mic.error ?? status}
             {busy ? ' · working' : ''}
           </p>
+          {mode === 'mic' && usingDeviceMic ? (
+            <p className="max-w-sm text-center text-xs leading-relaxed text-fg-subtle">
+              Chosen mics are transcribed in short slices. Live captions stay on Browser microphone.
+            </p>
+          ) : null}
           {mode === 'meeting' ? (
             <div>
               <input

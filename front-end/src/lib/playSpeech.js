@@ -10,12 +10,22 @@ export function stopSpeech() {
   }
 }
 
-export async function playSpeech(text, language, speechLocale) {
+async function applySink(audio, sinkId) {
+  if (!sinkId || sinkId === 'default' || typeof audio.setSinkId !== 'function') return;
+  try {
+    await audio.setSinkId(sinkId);
+  } catch {
+    /* play on system default */
+  }
+}
+
+export async function playSpeech(text, language, speechLocale, sinkId) {
   stopSpeech();
   const result = await speakText({ text, language });
   if (result.ok) {
     const audio = new Audio(`data:${result.mime};base64,${result.audioBase64}`);
     currentAudio = audio;
+    await applySink(audio, sinkId);
     await audio.play();
     await new Promise((resolve) => {
       audio.onended = () => resolve();
