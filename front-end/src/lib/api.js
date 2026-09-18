@@ -5,7 +5,7 @@ async function readError(response) {
   return detail || `Request failed (${response.status})`;
 }
 
-export async function translateText({ text, source, target }) {
+export async function translateText({ text, source, target, engine }) {
   const response = await fetch(`${API_BASE}/api/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -13,6 +13,7 @@ export async function translateText({ text, source, target }) {
       text,
       source_language: source,
       target_language: target,
+      engine,
     }),
   });
 
@@ -24,7 +25,7 @@ export async function translateText({ text, source, target }) {
   return { ok: true, translated: data.translated_text ?? '', engine: data.engine ?? 'google' };
 }
 
-export async function transcribeAndTranslate({ audioBase64, mime, language, target }) {
+export async function transcribeAndTranslate({ audioBase64, mime, language, target, engine }) {
   const response = await fetch(`${API_BASE}/api/transcribe-and-translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -33,6 +34,7 @@ export async function transcribeAndTranslate({ audioBase64, mime, language, targ
       mime,
       source_language: language,
       target_language: target,
+      engine,
     }),
   });
 
@@ -45,6 +47,7 @@ export async function transcribeAndTranslate({ audioBase64, mime, language, targ
     ok: true,
     transcribed: data.transcribed_text ?? '',
     translated: data.translated_text ?? '',
+    engine: data.engine ?? engine ?? 'google',
   };
 }
 

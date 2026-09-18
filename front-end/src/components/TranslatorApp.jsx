@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { LANGUAGES, languageById } from '../lib/languages';
 import { punctuateText, transcribeAndTranslate, translateText } from '../lib/api';
+import { ENGINES, engineById, isActiveEngine, loadEngine, saveEngine } from '../lib/engines';
 import {
   archiveDraft,
   clearCurrent,
@@ -89,6 +90,37 @@ function IconButton({ onClick, label, disabled, pressed, className = '', childre
   );
 }
 
+function EnginePicker({ value, onChange, onLocked }) {
+  return (
+    <select
+      id="translate-engine"
+      aria-label="Translate with"
+      value={value}
+      onChange={(event) => {
+        const id = event.target.value;
+        if (!isActiveEngine(id)) {
+          onLocked(engineById(id).label);
+          return;
+        }
+        onChange(id);
+      }}
+      className="h-9 w-auto max-w-full self-start appearance-none rounded-md border border-border bg-surface px-2.5 text-xs text-fg outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {ENGINES.map((engine) => (
+        <option key={engine.id} value={engine.id}>
+          {engine.pro ? `${engine.label} · Pro` : `${engine.label} · ${engine.hint}`}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function engineStatus(liveLabel, engine) {
+  if (engine === 'grok') return `${liveLabel} · Grok`;
+  if (engine === 'google') return `${liveLabel} · Google`;
+  return liveLabel;
+}
+
 export default function TranslatorApp() {
   const [sourceId, setSourceId] = useState('en');
   const [targetId, setTargetId] = useState('vi');
@@ -102,6 +134,7 @@ export default function TranslatorApp() {
   const [sessions, setSessions] = useState([]);
   const [speakingId, setSpeakingId] = useState(null);
   const [hydrated, setHydrated] = useState(false);
+  const [engineId, setEngineId] = useState('grok');
   const source = languageById(sourceId);
   const target = languageById(targetId);
   const speech = useSpeechRecognition(source.speech);
@@ -119,10 +152,12 @@ export default function TranslatorApp() {
   const targetCodeRef = useRef(target.translate);
   const targetSpeechRef = useRef(target.speech);
   const outputIdRef = useRef(devices.outputId);
+  const engineRef = useRef(engineId);
   sourceCodeRef.current = source.translate;
   targetCodeRef.current = target.translate;
   targetSpeechRef.current = target.speech;
   outputIdRef.current = devices.outputId;
+  engineRef.current = engineId;
   const live = speech.listening || tab.capturing || mic.capturing;
   const usingDeviceMic = mode === 'mic' && !devices.usingBrowserMic;
 
@@ -134,6 +169,7 @@ export default function TranslatorApp() {
       setLines(draft.lines);
       setStatus('Restored last session.');
     }
+    setEngineId(loadEngine());
     setSessions(loadSessions());
     setHydrated(true);
   }, []);
@@ -146,6 +182,12 @@ export default function TranslatorApp() {
   const swap = () => {
     setSourceId(targetId);
     setTargetId(sourceId);
+  };
+
+  const changeEngine = (id) => {
+    setEngineId(id);
+    saveEngine(id);
+    setStatus(`Translate with ${engineById(id).label}.`);
   };
 
   const speakLine = useCallback(async (line) => {
@@ -176,11 +218,12 @@ export default function TranslatorApp() {
         text: sourceText,
         source: sourceCodeRef.current,
         target: targetCodeRef.current,
+        engine: engineRef.current,
       });
       if (result.ok) {
         setLines((prev) => [...prev, { id: crypto.randomUUID(), source: sourceText, target: result.translated }]);
         const listening = mode === 'meeting' ? 'Capturing tab audio…' : 'Listening';
-        setStatus(result.engine === 'grok' ? `${listening} · Grok` : listening);
+        setStatus(engineStatus(listening, result.engine));
       } else {
         setStatus(result.error);
       }
@@ -202,6 +245,7 @@ export default function TranslatorApp() {
         mime: next.mime,
         language: sourceCodeRef.current,
         target: targetCodeRef.current,
+        engine: engineRef.current,
       });
       if (!result.ok) {
         setStatus(result.error);
@@ -212,7 +256,8 @@ export default function TranslatorApp() {
         continue;
       }
       setLines((prev) => [...prev, { id: crypto.randomUUID(), source: result.transcribed, target: result.translated }]);
-      setStatus(mode === 'meeting' ? 'Capturing tab audio…' : 'Listening');
+      const listening = mode === 'meeting' ? 'Capturing tab audio…' : 'Listening';
+      setStatus(engineStatus(listening, result.engine));
     }
     transcribingRef.current = false;
     setBusy(false);
@@ -417,17 +462,24 @@ export default function TranslatorApp() {
             <Monitor className="size-4" /> Meeting tab
           </button>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-start">
           <LanguageField id="source-lang" label="Heard as" value={sourceId} exclude={targetId} onChange={setSourceId} />
           <button
             type="button"
-            className="mx-auto inline-flex size-11 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg sm:mb-0.5"
+            className="mx-auto inline-flex size-11 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg sm:mt-7"
             onClick={swap}
             aria-label="Swap languages"
           >
             <ArrowLeftRight className="size-4" />
           </button>
-          <LanguageField id="target-lang" label="Written as" value={targetId} exclude={sourceId} onChange={setTargetId} />
+          <div className="flex min-w-0 flex-col gap-2">
+            <LanguageField id="target-lang" label="Written as" value={targetId} exclude={sourceId} onChange={setTargetId} />
+            <EnginePicker
+              value={engineId}
+              onChange={changeEngine}
+              onLocked={(label) => setStatus(`${label} is a Pro translator.`)}
+            />
+          </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           {mode === 'mic' ? (
@@ -520,7 +572,10 @@ export default function TranslatorApp() {
           </div>
         </article>
         <article className="flex min-h-[240px] flex-col rounded-xl border border-border bg-elevated p-5">
-          <h2 className="text-xs font-medium tracking-wide text-fg-subtle uppercase">{target.native}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xs font-medium tracking-wide text-fg-subtle uppercase">{target.native}</h2>
+            <p className="font-mono text-[11px] tracking-wide text-fg-subtle">{engineById(engineId).label}</p>
+          </div>
           <div className="mt-3 flex-1 space-y-3 overflow-y-auto text-[15px] leading-relaxed">
             {lines.length === 0 ? (
               <p className="text-fg-subtle">Translation appears line by line.</p>

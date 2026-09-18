@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Lời — Real-Time Translator API",
-    description="Part 1 translate · Part 2 meeting STT · Part 3 punctuate · Part 4 speak · Part 5 keep.",
-    version="1.6.0",
+    description="Part 1 translate · Part 2 meeting STT · Part 3 punctuate · Part 4 speak · Part 5 keep · engine picker.",
+    version="1.7.0",
 )
 
 app.add_middleware(
@@ -115,6 +115,7 @@ class TranslationRequest(BaseModel):
     target_language: Optional[str] = None
     source: Optional[str] = None
     target: Optional[str] = None
+    engine: Optional[str] = None
 
 
 class AudioRequest(BaseModel):
@@ -124,6 +125,7 @@ class AudioRequest(BaseModel):
     target_language: Optional[str] = None
     source: Optional[str] = None
     target: Optional[str] = None
+    engine: Optional[str] = None
 
 
 class PunctuateRequest(BaseModel):
@@ -219,15 +221,17 @@ async def mymemory_translate(text: str, source: str, target: str) -> str:
         return out
 
 
-async def translate_plain(text: str, source: str, target: str) -> tuple[str, str]:
+async def translate_plain(text: str, source: str, target: str, engine: str = "grok") -> tuple[str, str]:
     if source.lower() == target.lower():
-        return text, "same"
-    try:
-        grok = await grok_translate(text, source, target)
-        if grok:
-            return grok, "grok"
-    except Exception:
-        pass
+        return text, engine if engine in {"grok", "google"} else "same"
+    prefer_grok = (engine or "grok") != "google"
+    if prefer_grok:
+        try:
+            grok = await grok_translate(text, source, target)
+            if grok:
+                return grok, "grok"
+        except Exception:
+            pass
     try:
         return await google_translate(text, source, target), "google"
     except Exception:
@@ -409,8 +413,9 @@ async def translate_text(request: TranslationRequest):
 
     source = to_code(request.source_language or request.source or "auto")
     target = to_code(request.target_language or request.target or "en")
+    chosen = request.engine if request.engine in {"grok", "google"} else "grok"
     try:
-        translated, engine = await translate_plain(text, source, target)
+        translated, engine = await translate_plain(text, source, target, chosen)
         return {"ok": True, "translated_text": translated, "engine": engine}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
@@ -432,6 +437,7 @@ async def transcribe_and_translate(request: AudioRequest):
 
     source = lang_short(request.source_language or request.source or "en")
     target = to_code(request.target_language or request.target or "vi")
+    chosen = request.engine if request.engine in {"grok", "google"} else "grok"
     mime = request.mime or "audio/wav"
     try:
         transcribed = await transcribe_audio(audio, mime, source)
@@ -440,11 +446,16 @@ async def transcribe_and_translate(request: AudioRequest):
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
 
     if not transcribed:
-        return {"ok": True, "transcribed_text": "", "translated_text": ""}
+        return {"ok": True, "transcribed_text": "", "translated_text": "", "engine": chosen}
 
     try:
-        translated, _engine = await translate_plain(transcribed, source, target)
-        return {"ok": True, "transcribed_text": transcribed, "translated_text": translated}
+        translated, used = await translate_plain(transcribed, source, target, chosen)
+        return {
+            "ok": True,
+            "transcribed_text": transcribed,
+            "translated_text": translated,
+            "engine": used,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
 
