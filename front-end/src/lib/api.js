@@ -21,7 +21,7 @@ export async function translateText({ text, source, target }) {
   }
 
   const data = await response.json();
-  return { ok: true, translated: data.translated_text ?? '' };
+  return { ok: true, translated: data.translated_text ?? '', engine: data.engine ?? 'google' };
 }
 
 export async function transcribeAndTranslate({ audioBase64, mime, language, target }) {

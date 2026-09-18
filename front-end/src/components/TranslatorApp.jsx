@@ -179,7 +179,8 @@ export default function TranslatorApp() {
       });
       if (result.ok) {
         setLines((prev) => [...prev, { id: crypto.randomUUID(), source: sourceText, target: result.translated }]);
-        setStatus(mode === 'meeting' ? 'Capturing tab audio…' : 'Listening');
+        const listening = mode === 'meeting' ? 'Capturing tab audio…' : 'Listening';
+        setStatus(result.engine === 'grok' ? `${listening} · Grok` : listening);
       } else {
         setStatus(result.error);
       }

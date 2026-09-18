@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 app = FastAPI(
     title="Lời — Real-Time Translator API",
     description="Part 1 translate · Part 2 meeting STT · Part 3 punctuate · Part 4 speak · Part 5 keep.",
-    version="1.5.0",
+    version="1.6.0",
 )
 
 app.add_middleware(
@@ -43,6 +43,20 @@ NAME_TO_CODE = {
     "german": "de",
     "spanish": "es",
     "tiếng việt": "vi",
+}
+
+CODE_TO_NAME = {
+    "vi": "Vietnamese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese",
+    "zh-CN": "Simplified Chinese",
+    "th": "Thai",
+    "id": "Indonesian",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
 }
 
 TTS_LANG = {
@@ -131,6 +145,52 @@ def parse_google_payload(data: object) -> str:
     return "".join(parts).strip()
 
 
+def lang_name(code: str) -> str:
+    raw = to_code(code)
+    return CODE_TO_NAME.get(raw) or CODE_TO_NAME.get(raw.split("-")[0], raw)
+
+
+async def grok_translate(text: str, source: str, target: str) -> Optional[str]:
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        return None
+    snippet = text[:800]
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "grok-4.5",
+                "temperature": 0,
+                "max_tokens": 400,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"Translate from {lang_name(source)} to {lang_name(target)}. "
+                            "Keep meaning, tone, and proper names. "
+                            "Reply with the translation only — no quotes, no notes."
+                        ),
+                    },
+                    {"role": "user", "content": snippet},
+                ],
+            },
+        )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        out = ((choices[0].get("message") or {}).get("content") or "").strip()
+        if not out or len(out) > len(snippet) * 4:
+            return None
+        return out.strip().strip('"«»')
+
+
 async def google_translate(text: str, source: str, target: str) -> str:
     url = "https://translate.googleapis.com/translate_a/single"
     params = {"client": "gtx", "sl": source, "tl": target, "dt": "t", "q": text}
@@ -159,13 +219,19 @@ async def mymemory_translate(text: str, source: str, target: str) -> str:
         return out
 
 
-async def translate_plain(text: str, source: str, target: str) -> str:
+async def translate_plain(text: str, source: str, target: str) -> tuple[str, str]:
     if source.lower() == target.lower():
-        return text
+        return text, "same"
     try:
-        return await google_translate(text, source, target)
+        grok = await grok_translate(text, source, target)
+        if grok:
+            return grok, "grok"
     except Exception:
-        return await mymemory_translate(text, source, target)
+        pass
+    try:
+        return await google_translate(text, source, target), "google"
+    except Exception:
+        return await mymemory_translate(text, source, target), "memory"
 
 
 def needs_punctuation(text: str) -> bool:
@@ -297,7 +363,7 @@ def health():
     return {
         "status": "ok",
         "stt": stt_backend(),
-        "punctuate": "xai" if os.environ.get("XAI_API_KEY") else "cheap",
+        "translate": "xai" if os.environ.get("XAI_API_KEY") else "google",
         "tts": "xai" if os.environ.get("XAI_API_KEY") else "browser",
     }
 
@@ -344,8 +410,8 @@ async def translate_text(request: TranslationRequest):
     source = to_code(request.source_language or request.source or "auto")
     target = to_code(request.target_language or request.target or "en")
     try:
-        translated = await translate_plain(text, source, target)
-        return {"ok": True, "translated_text": translated}
+        translated, engine = await translate_plain(text, source, target)
+        return {"ok": True, "translated_text": translated, "engine": engine}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
 
@@ -377,7 +443,7 @@ async def transcribe_and_translate(request: AudioRequest):
         return {"ok": True, "transcribed_text": "", "translated_text": ""}
 
     try:
-        translated = await translate_plain(transcribed, source, target)
+        translated, _engine = await translate_plain(transcribed, source, target)
         return {"ok": True, "transcribed_text": transcribed, "translated_text": translated}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc

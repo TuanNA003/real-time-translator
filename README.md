@@ -12,7 +12,7 @@ Speak, type, or share a meeting tab. The other side writes itself, line by line.
 ## Stack
 
 - **Frontend:** React 19, Vite, Tailwind CSS 4, Web Speech API, getUserMedia, getDisplayMedia, speechSynthesis
-- **Backend:** FastAPI. Translate via Google gtx (MyMemory fallback). Meeting / device-mic STT via `XAI_API_KEY` or optional Whisper. Punctuate / TTS via xAI when the key is set.
+- **Backend:** FastAPI. Translate via Grok when `XAI_API_KEY` is set (Google gtx / MyMemory fallback). Meeting / device-mic STT via the same key or optional Whisper. Punctuate / TTS via xAI when the key is set.
 
 ## Run locally (VS Code)
 
@@ -59,7 +59,7 @@ Chrome: http://localhost:5173 — keep both terminals running.
 1. **Listen from:** Browser microphone (live captions) or a named headset / USB mic.
 2. **Play through:** system default, speakers, or headphones — then press the speaker on a translation.
 3. Mic: Start, speak a sentence. The source line should come back punctuated.
-4. Type a line without punctuation (`hello how are you`) and send.
+3. Type a line without punctuation (`hello how are you`) and send — status should mention Grok when the key is set.
 5. Meeting tab: Start, pick a Chrome tab, enable Share tab audio (this is how you caption *speakers* / a call).
 6. Clip: in Meeting mode, *Or transcribe a clip*.
 7. Clear — the session lands in History. Restore it. Download `.txt`.
