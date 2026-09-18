@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+import re
 import tempfile
 from typing import Optional
 
@@ -11,8 +12,8 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Lời — Real-Time Translator API",
-    description="Part 1: translate. Part 2: transcribe meeting audio, then translate.",
-    version="1.1.0",
+    description="Part 1 translate · Part 2 meeting STT · Part 3 punctuate · Part 4 speak · Part 5 keep.",
+    version="1.5.0",
 )
 
 app.add_middleware(
@@ -44,6 +45,12 @@ NAME_TO_CODE = {
     "tiếng việt": "vi",
 }
 
+TTS_LANG = {
+    "en", "ar", "bn", "zh", "fr", "de", "hi", "id",
+    "it", "ja", "ko", "pt", "ru", "es", "tr", "vi",
+}
+
+TERMINAL = re.compile(r"[.?!…。？！]$")
 _whisper_model = None
 
 
@@ -64,6 +71,13 @@ def lang_short(value: str) -> str:
     if code in {"auto", ""}:
         return "en"
     return code.split("-")[0]
+
+
+def tts_language(code: str) -> str:
+    short = lang_short(code)
+    if short == "zh":
+        return "zh"
+    return short if short in TTS_LANG else "auto"
 
 
 def extension_for(mime: str) -> str:
@@ -96,6 +110,15 @@ class AudioRequest(BaseModel):
     target_language: Optional[str] = None
     source: Optional[str] = None
     target: Optional[str] = None
+
+
+class PunctuateRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=800)
+
+
+class SpeakRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=500)
+    language: Optional[str] = None
 
 
 def parse_google_payload(data: object) -> str:
@@ -143,6 +166,76 @@ async def translate_plain(text: str, source: str, target: str) -> str:
         return await google_translate(text, source, target)
     except Exception:
         return await mymemory_translate(text, source, target)
+
+
+def needs_punctuation(text: str) -> bool:
+    trimmed = text.strip()
+    if len(trimmed) < 4:
+        return False
+    return not TERMINAL.search(trimmed) and not re.search(r"[,:;，；]", trimmed)
+
+
+def cheap_punctuate(text: str) -> str:
+    trimmed = text.strip()
+    if not trimmed:
+        return trimmed
+    capped = trimmed[0].upper() + trimmed[1:]
+    if TERMINAL.search(capped):
+        return capped
+    return f"{capped}."
+
+
+async def grok_punctuate(text: str) -> Optional[str]:
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        return None
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "grok-4.5",
+                "temperature": 0,
+                "max_tokens": 200,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Restore only punctuation and capitalization. "
+                            "Keep the original language and every word. "
+                            "Reply with the punctuated sentence only — no quotes, no notes."
+                        ),
+                    },
+                    {"role": "user", "content": text[:400]},
+                ],
+            },
+        )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        out = ((choices[0].get("message") or {}).get("content") or "").strip()
+        if not out or len(out) > len(text) * 3:
+            return None
+        return out.strip().strip('"«»')
+
+
+async def run_punctuate(text: str) -> str:
+    trimmed = text.strip()
+    if not needs_punctuation(trimmed):
+        return trimmed
+    try:
+        polished = await grok_punctuate(trimmed)
+        if polished:
+            return polished
+    except Exception:
+        pass
+    return cheap_punctuate(trimmed)
 
 
 def stt_backend() -> str:
@@ -201,7 +294,45 @@ async def transcribe_audio(audio: bytes, mime: str, language: str) -> str:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "stt": stt_backend()}
+    return {
+        "status": "ok",
+        "stt": stt_backend(),
+        "punctuate": "xai" if os.environ.get("XAI_API_KEY") else "cheap",
+        "tts": "xai" if os.environ.get("XAI_API_KEY") else "browser",
+    }
+
+
+@app.post("/api/punctuate")
+async def punctuate_text(request: PunctuateRequest):
+    return {"ok": True, "text": await run_punctuate(request.text)}
+
+
+@app.post("/api/speak")
+async def speak_text(request: SpeakRequest):
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="TTS needs XAI_API_KEY")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.x.ai/v1/tts",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "text": request.text[:500],
+                "voice_id": "eve",
+                "language": tts_language(request.language or "auto"),
+            },
+        )
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"TTS failed ({response.status_code}). {response.text[:120]}",
+            )
+        mime = response.headers.get("content-type") or "audio/mpeg"
+        audio_b64 = base64.b64encode(response.content).decode("ascii")
+        return {"ok": True, "audio_base64": audio_b64, "mime": mime}
 
 
 @app.post("/api/translate")
@@ -238,6 +369,7 @@ async def transcribe_and_translate(request: AudioRequest):
     mime = request.mime or "audio/wav"
     try:
         transcribed = await transcribe_audio(audio, mime, source)
+        transcribed = await run_punctuate(transcribed) if transcribed else ""
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
 
