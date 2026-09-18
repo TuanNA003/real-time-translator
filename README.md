@@ -1,21 +1,23 @@
 # Lời — Real-Time Speech Translator
 
-Speak (or type) in one language. The other side writes itself, sentence by sentence.
+Speak, type, or share a meeting tab. The other side writes itself, line by line.
 
-Part 1 of the thesis: **microphone / typed text → Web Speech API → FastAPI → translation**.
+- **Part 1:** microphone / typed text → Web Speech API → FastAPI → translation
+- **Part 2:** tab / system audio → MediaRecorder chunks → STT → translation
 
 ## Stack
 
-- **Frontend:** React 19, Vite, Tailwind CSS 4, Web Speech API
-- **Backend:** FastAPI + Google Translate (unofficial `gtx` endpoint, MyMemory fallback)
+- **Frontend:** React 19, Vite, Tailwind CSS 4, Web Speech API, getDisplayMedia
+- **Backend:** FastAPI. Translate via Google gtx (MyMemory fallback). Meeting STT via XAI_API_KEY or optional Whisper.
 
 ## Run locally (VS Code)
 
-Need: Python 3.10+, Node 18+, **Chrome or Edge**, Git.
+Need: Python 3.10+, Node 18+, Chrome or Edge, Git. ffmpeg if you use Whisper.
 
 ```bash
 git clone https://github.com/TuanNA003/real-time-translator.git
 cd real-time-translator
+git pull
 ```
 
 ### Terminal 1 — backend
@@ -24,13 +26,17 @@ cd real-time-translator
 cd back-end
 python -m venv venv
 # Windows: venv\Scripts\activate
-# macOS/Linux:
 source venv/bin/activate
 pip install -r requirements.txt
 python main.py
 ```
 
-Open [http://localhost:8000/docs](http://localhost:8000/docs) — Swagger means the API is up.
+Open http://localhost:8000/docs
+
+Meeting audio STT (pick one):
+
+- Set environment variable XAI_API_KEY (Grok Speech-to-Text), or
+- pip install openai-whisper (downloads the base model on first use)
 
 ### Terminal 2 — frontend
 
@@ -40,18 +46,18 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in Chrome. Allow the microphone, or type a sentence in the box at the bottom.
-
-Vite proxies `/api` to the backend, so keep **both** terminals running.
+Chrome: http://localhost:5173 — keep both terminals running.
 
 ## What to test
 
-1. Default is Vietnamese → English. Type `Xin chào` and send.
-2. Start the mic, speak a full sentence, wait for the final transcript + translation.
-3. Swap languages. Copy / clear.
+1. Mic: Start, speak a sentence.
+2. Type a line and send.
+3. Meeting tab: choose Meeting tab, Start, pick a Chrome tab, enable Share tab audio. Chunks (~4s) are transcribed and translated.
+4. Clip: in Meeting mode, Or transcribe a clip — upload wav/mp3/webm if share is blocked.
+
+Default languages for meetings: English heard to Vietnamese written (swap anytime).
 
 ## Notes
 
-- Web Speech API works best in Chrome/Edge on `localhost`.
-- Translation uses an unofficial Google endpoint (fine for a prototype; not for production SLA).
-- System-audio / meeting capture is **Part 2** (not in this commit).
+- Tab capture needs Chrome and a tick on share-audio. The in-chat preview often blocks this picker; VS Code + Chrome is the real test.
+- Web Speech API is mic-only. Meeting audio cannot use it — that is why Part 2 sends audio to the backend.
