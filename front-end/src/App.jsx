@@ -1,9 +1,10 @@
-import React from 'react'
 import TranslatorApp from './components/TranslatorApp'
 
 function App() {
   return (
-    <TranslatorApp />
+    <main className="min-h-dvh bg-bg text-fg">
+      <TranslatorApp />
+    </main>
   )
 }
 
