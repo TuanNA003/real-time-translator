@@ -1,3 +1,7 @@
+import asyncio
+import base64
+import os
+import tempfile
 from typing import Optional
 
 import httpx
@@ -7,8 +11,8 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(
     title="Lời — Real-Time Translator API",
-    description="Translate short utterances. Part 1 of the speech-to-text thesis.",
-    version="1.0.0",
+    description="Part 1: translate. Part 2: transcribe meeting audio, then translate.",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -40,6 +44,8 @@ NAME_TO_CODE = {
     "tiếng việt": "vi",
 }
 
+_whisper_model = None
+
 
 def to_code(value: str) -> str:
     raw = (value or "").strip()
@@ -53,8 +59,39 @@ def to_code(value: str) -> str:
     return raw[:2].lower()
 
 
+def lang_short(value: str) -> str:
+    code = to_code(value)
+    if code in {"auto", ""}:
+        return "en"
+    return code.split("-")[0]
+
+
+def extension_for(mime: str) -> str:
+    mime = (mime or "").lower()
+    if "wav" in mime:
+        return "wav"
+    if "mpeg" in mime or "mp3" in mime:
+        return "mp3"
+    if "ogg" in mime:
+        return "ogg"
+    if "mp4" in mime or "m4a" in mime:
+        return "m4a"
+    if "flac" in mime:
+        return "flac"
+    return "webm"
+
+
 class TranslationRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4000)
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
+    source: Optional[str] = None
+    target: Optional[str] = None
+
+
+class AudioRequest(BaseModel):
+    audio_data: str = Field(..., min_length=8, max_length=3_500_000)
+    mime: Optional[str] = None
     source_language: Optional[str] = None
     target_language: Optional[str] = None
     source: Optional[str] = None
@@ -99,9 +136,72 @@ async def mymemory_translate(text: str, source: str, target: str) -> str:
         return out
 
 
+async def translate_plain(text: str, source: str, target: str) -> str:
+    if source.lower() == target.lower():
+        return text
+    try:
+        return await google_translate(text, source, target)
+    except Exception:
+        return await mymemory_translate(text, source, target)
+
+
+def stt_backend() -> str:
+    if os.environ.get("XAI_API_KEY"):
+        return "xai"
+    try:
+        import whisper  # noqa: F401
+
+        return "whisper"
+    except Exception:
+        return "unavailable"
+
+
+async def transcribe_xai(audio: bytes, mime: str, language: str) -> str:
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("missing XAI_API_KEY")
+    filename = f"clip.{extension_for(mime)}"
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        response = await client.post(
+            "https://api.x.ai/v1/stt",
+            headers={"Authorization": f"Bearer {api_key}"},
+            data={
+                "model": "grok-voice-transcribe-1.0",
+                "language": language,
+                "format": "true",
+            },
+            files={"file": (filename, audio, mime or "application/octet-stream")},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return str(payload.get("text") or "").strip()
+
+
+def _whisper_transcribe_sync(audio: bytes, mime: str, language: str) -> str:
+    global _whisper_model
+    try:
+        import whisper
+    except ImportError as exc:
+        raise RuntimeError("Install openai-whisper or set XAI_API_KEY") from exc
+    if _whisper_model is None:
+        _whisper_model = whisper.load_model("base")
+    suffix = f".{extension_for(mime)}"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
+        tmp.write(audio)
+        tmp.flush()
+        result = _whisper_model.transcribe(tmp.name, language=language)
+    return str(result.get("text") or "").strip()
+
+
+async def transcribe_audio(audio: bytes, mime: str, language: str) -> str:
+    if os.environ.get("XAI_API_KEY"):
+        return await transcribe_xai(audio, mime, language)
+    return await asyncio.to_thread(_whisper_transcribe_sync, audio, mime, language)
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "stt": stt_backend()}
 
 
 @app.post("/api/translate")
@@ -112,18 +212,43 @@ async def translate_text(request: TranslationRequest):
 
     source = to_code(request.source_language or request.source or "auto")
     target = to_code(request.target_language or request.target or "en")
-    if source.lower() == target.lower():
-        return {"ok": True, "translated_text": text}
+    try:
+        translated = await translate_plain(text, source, target)
+        return {"ok": True, "translated_text": translated}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
+
+
+@app.post("/api/transcribe-and-translate")
+async def transcribe_and_translate(request: AudioRequest):
+    if stt_backend() == "unavailable":
+        raise HTTPException(
+            status_code=503,
+            detail="Meeting STT needs XAI_API_KEY or: pip install openai-whisper",
+        )
+    try:
+        audio = base64.b64decode(request.audio_data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid audio data") from exc
+    if len(audio) < 1500:
+        return {"ok": True, "transcribed_text": "", "translated_text": ""}
+
+    source = lang_short(request.source_language or request.source or "en")
+    target = to_code(request.target_language or request.target or "vi")
+    mime = request.mime or "audio/wav"
+    try:
+        transcribed = await transcribe_audio(audio, mime, source)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
+
+    if not transcribed:
+        return {"ok": True, "transcribed_text": "", "translated_text": ""}
 
     try:
-        translated = await google_translate(text, source, target)
-        return {"ok": True, "translated_text": translated}
-    except Exception:
-        try:
-            translated = await mymemory_translate(text, source, target)
-            return {"ok": True, "translated_text": translated}
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
+        translated = await translate_plain(transcribed, source, target)
+        return {"ok": True, "transcribed_text": transcribed, "translated_text": translated}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
 
 
 if __name__ == "__main__":

@@ -46,7 +46,9 @@ export default function TranslatorApp() {
   const speech = useSpeechRecognition(source.speech);
   const tab = useTabAudio();
   const translatingRef = useRef(false);
+  const transcribingRef = useRef(false);
   const queueRef = useRef([]);
+  const audioQueueRef = useRef([]);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
   const sourceCodeRef = useRef(source.translate);
@@ -71,35 +73,42 @@ export default function TranslatorApp() {
       const result = await translateText({ text: next, source: sourceCodeRef.current, target: targetCodeRef.current });
       if (result.ok) {
         setLines((prev) => [...prev, { id: crypto.randomUUID(), source: next, target: result.translated }]);
-        setStatus('Listening');
+        setStatus(mode === 'meeting' ? 'Capturing tab audio…' : 'Listening');
       } else {
         setStatus(result.error);
       }
     }
     translatingRef.current = false;
     setBusy(false);
-  }, []);
+  }, [mode]);
 
   const handleAudioChunk = useCallback(async (base64, mime) => {
+    audioQueueRef.current.push({ base64, mime });
+    if (transcribingRef.current) return;
+    transcribingRef.current = true;
     setBusy(true);
-    setStatus('Transcribing meeting audio…');
-    const result = await transcribeAndTranslate({
-      audioBase64: base64,
-      mime,
-      language: sourceCodeRef.current,
-      target: targetCodeRef.current,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setStatus(result.error);
-      return;
-    }
-    if (!result.transcribed) {
+    while (audioQueueRef.current.length) {
+      const next = audioQueueRef.current.shift();
+      setStatus('Transcribing meeting audio…');
+      const result = await transcribeAndTranslate({
+        audioBase64: next.base64,
+        mime: next.mime,
+        language: sourceCodeRef.current,
+        target: targetCodeRef.current,
+      });
+      if (!result.ok) {
+        setStatus(result.error);
+        continue;
+      }
+      if (!result.transcribed) {
+        setStatus('Capturing tab audio…');
+        continue;
+      }
+      setLines((prev) => [...prev, { id: crypto.randomUUID(), source: result.transcribed, target: result.translated }]);
       setStatus('Capturing tab audio…');
-      return;
     }
-    setLines((prev) => [...prev, { id: crypto.randomUUID(), source: result.transcribed, target: result.translated }]);
-    setStatus('Capturing tab audio…');
+    transcribingRef.current = false;
+    setBusy(false);
   }, []);
 
   useEffect(() => {
