@@ -75,6 +75,7 @@ export function AccountMenu() {
         <button
           type="button"
           aria-label="Account"
+          title="Account"
           onClick={() => setOpen((value) => !value)}
           className="inline-flex size-11 items-center justify-center overflow-hidden rounded-full border border-border bg-surface text-sm text-fg hover:border-border-strong"
         >
@@ -104,6 +105,7 @@ export function AccountMenu() {
       <button
         type="button"
         aria-label="Sign in"
+        title="Sign in"
         onClick={() => setOpen((value) => !value)}
         className="inline-flex size-11 items-center justify-center rounded-full text-fg-muted hover:bg-surface hover:text-fg"
       >

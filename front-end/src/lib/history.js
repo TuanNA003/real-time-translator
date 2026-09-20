@@ -56,3 +56,10 @@ export function sessionPreview(session) {
 export function exportText(lines) {
   return lines.map((line) => `${line.source}\n${line.target}`).join('\n\n');
 }
+
+export function exportTargets(lines) {
+  return lines
+    .map((line) => (line.target || '').trim())
+    .filter(Boolean)
+    .join('\n');
+}

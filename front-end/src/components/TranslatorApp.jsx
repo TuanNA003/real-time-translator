@@ -24,6 +24,7 @@ import {
   clearCurrent,
   deleteSession,
   exportText,
+  exportTargets,
   loadCurrent,
   loadSessions,
   saveCurrent,
@@ -78,16 +79,18 @@ function DeviceField({ id, label, value, options, onChange, onFocus }) {
 
 function IconButton({ onClick, label, disabled, pressed, className = '', children }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      aria-pressed={pressed}
-      className={`inline-flex size-11 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg disabled:opacity-40 ${className}`}
-    >
-      {children}
-    </button>
+    <span className="inline-flex" title={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className={`inline-flex size-11 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg disabled:opacity-40 ${className}`}
+        aria-pressed={pressed}
+      >
+        {children}
+      </button>
+    </span>
   );
 }
 
@@ -369,10 +372,10 @@ export default function TranslatorApp() {
   };
 
   const copyAll = async () => {
-    const blob = exportText(lines);
+    const blob = exportTargets(lines);
     if (!blob) return;
     await navigator.clipboard.writeText(blob);
-    setStatus('Copied');
+    setStatus('Copied translation');
   };
 
   const downloadAll = () => {
@@ -433,13 +436,13 @@ export default function TranslatorApp() {
             <IconButton onClick={() => setHistoryOpen(true)} label="Session history">
               <History className="size-4" />
             </IconButton>
-            <IconButton onClick={copyAll} label="Copy transcript" disabled={!lines.length}>
+            <IconButton onClick={copyAll} label="Copy translation" disabled={!lines.length}>
               <Copy className="size-4" />
             </IconButton>
             <IconButton onClick={downloadAll} label="Download transcript" disabled={!lines.length} className="hidden sm:inline-flex">
               <Download className="size-4" />
             </IconButton>
-            <IconButton onClick={reset} label="Clear">
+            <IconButton onClick={reset} label="Clear session">
               <RotateCcw className="size-4" />
             </IconButton>
           </div>
@@ -470,6 +473,7 @@ export default function TranslatorApp() {
             className="mx-auto inline-flex size-11 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg sm:mt-7"
             onClick={swap}
             aria-label="Swap languages"
+            title="Swap languages"
           >
             <ArrowLeftRight className="size-4" />
           </button>
@@ -511,7 +515,8 @@ export default function TranslatorApp() {
               className={`relative inline-flex size-16 items-center justify-center rounded-full ${live ? 'bg-live text-white' : 'bg-accent text-accent-foreground'}`}
               onClick={() => void toggleCapture()}
               aria-pressed={live}
-              aria-label={live ? 'Stop' : 'Start'}
+              aria-label={live ? 'Stop listening' : 'Start listening'}
+              title={live ? 'Stop listening' : 'Start listening'}
             >
               {live ? (
                 <MicOff className="size-6" />
@@ -589,6 +594,7 @@ export default function TranslatorApp() {
                     className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-sm text-fg-subtle hover:bg-surface hover:text-fg ${speakingId === line.id ? 'text-sage' : ''}`}
                     onClick={() => void speakLine(line)}
                     aria-label="Play translation"
+                    title="Play translation"
                   >
                     <Volume2 className="size-3.5" />
                   </button>
