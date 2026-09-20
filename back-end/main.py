@@ -11,9 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 app = FastAPI(
-    title="Lời — Real-Time Translator API",
+    title="Transly — Real-Time Translator API",
     description="Part 1 translate · Part 2 meeting STT · Part 3 punctuate · Part 4 speak · Part 5 keep · engine picker.",
-    version="1.7.0",
+    version="1.8.0",
 )
 
 app.add_middleware(

@@ -7,30 +7,34 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Frontend dependencies and build outputs
+# Frontend
 front-end/node_modules
 front-end/dist
 front-end/extension-build
 front-end/web-build
+front-end/package-lock.json
 dist-ssr
 *.local
 
-# Node.js package-lock files (optional - remove if you want to track them)
-front-end/package-lock.json
-
-# Python virtual environments and cache
+# Python
 back-end/venv/
+back-end/.venv/
 back-end/__pycache__/
 back-end/*.pyc
 back-end/*.pyo
 back-end/*.pyd
 back-end/.Python
 back-end/env/
-back-end/pip-log.txt
-back-end/pip-delete-this-directory.txt
 back-end/.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
 
-# Environment variables and secrets
+# Secrets
 back-end/.env
 front-end/.env
 front-end/.env.local
@@ -38,26 +42,15 @@ front-end/.env.development.local
 front-end/.env.test.local
 front-end/.env.production.local
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 
-# Python bytecode
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# Distribution / packaging
-.Python
+# Packaging
 build/
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-/lib/
 lib64/
 parts/
 sdist/
@@ -68,11 +61,7 @@ wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
+# Tests / coverage
 htmlcov/
 .tox/
 .coverage
@@ -84,7 +73,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Editor directories and files
+# Editor / OS
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -94,21 +83,17 @@ coverage.xml
 *.njsproj
 *.sln
 *.sw?
-
-# OS generated files
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-# Temporary files
+# Temp / models
 *.tmp
 *.temp
 *.swp
 *.swo
 *~
-
-# Model files and data (if any large ML models are downloaded)
 *.model
 *.pkl
 *.h5
