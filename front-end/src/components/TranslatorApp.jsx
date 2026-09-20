@@ -15,6 +15,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
+import { AccountMenu } from './AccountMenu';
 import { LANGUAGES, languageById } from '../lib/languages';
 import { punctuateText, transcribeAndTranslate, translateText } from '../lib/api';
 import { ENGINES, engineById, isActiveEngine, loadEngine, saveEngine } from '../lib/engines';
@@ -379,7 +380,7 @@ export default function TranslatorApp() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `loi-${new Date().toISOString().slice(0, 10)}.txt`;
+    link.download = `transly-${new Date().toISOString().slice(0, 10)}.txt`;
     link.click();
     URL.revokeObjectURL(url);
     setStatus('Downloaded');
@@ -409,39 +410,39 @@ export default function TranslatorApp() {
     setSessions(deleteSession(id));
   };
 
-  const inputOptions = [{ id: BROWSER_MIC_ID, label: 'Browser microphone (live)' }, ...devices.inputs];
-  if (devices.inputId !== BROWSER_MIC_ID && !inputOptions.some((d) => d.id === devices.inputId)) {
-    inputOptions.push({ id: devices.inputId, label: devices.inputLabel });
-  }
+  const inputOptions = devices.inputs;
   const selectedInput = inputOptions.some((d) => d.id === devices.inputId) ? devices.inputId : BROWSER_MIC_ID;
   const selectedOutput = devices.outputs.some((d) => d.id === devices.outputId) ? devices.outputId : DEFAULT_OUTPUT_ID;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 py-6 sm:px-8 sm:py-10">
-      <header className="mb-8 flex items-end justify-between gap-4">
-        <div>
-          <p className="mb-2 font-mono text-[11px] tracking-[0.22em] text-sage uppercase">Listen from any device</p>
-          <h1 className="font-display text-4xl leading-none tracking-tight text-fg sm:text-5xl">Lời</h1>
-          <p className="mt-3 max-w-md text-sm leading-relaxed text-fg-muted">
+      <header className="mb-8">
+        <p className="mb-2 font-mono text-[11px] tracking-[0.22em] text-sage uppercase">Listen from any device</p>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="font-display text-4xl leading-none tracking-tight text-fg sm:text-5xl">Transly</h1>
+          <AccountMenu />
+        </div>
+        <div className="mt-3 flex items-end justify-between gap-4">
+          <p className="max-w-md text-sm leading-relaxed text-fg-muted">
             Pick a mic or headset to speak. Share a tab to caption speakers. Play the other side through headphones.
           </p>
-        </div>
-        <div className="flex items-center gap-1">
-          <IconButton onClick={toggleReadAloud} label={readAloud ? 'Turn off read aloud' : 'Read translations aloud'} pressed={readAloud} className={readAloud ? 'text-sage' : ''}>
-            {readAloud ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
-          </IconButton>
-          <IconButton onClick={() => setHistoryOpen(true)} label="Session history">
-            <History className="size-4" />
-          </IconButton>
-          <IconButton onClick={copyAll} label="Copy transcript" disabled={!lines.length}>
-            <Copy className="size-4" />
-          </IconButton>
-          <IconButton onClick={downloadAll} label="Download transcript" disabled={!lines.length} className="hidden sm:inline-flex">
-            <Download className="size-4" />
-          </IconButton>
-          <IconButton onClick={reset} label="Clear">
-            <RotateCcw className="size-4" />
-          </IconButton>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton onClick={toggleReadAloud} label={readAloud ? 'Turn off read aloud' : 'Read translations aloud'} pressed={readAloud} className={readAloud ? 'text-sage' : ''}>
+              {readAloud ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+            </IconButton>
+            <IconButton onClick={() => setHistoryOpen(true)} label="Session history">
+              <History className="size-4" />
+            </IconButton>
+            <IconButton onClick={copyAll} label="Copy transcript" disabled={!lines.length}>
+              <Copy className="size-4" />
+            </IconButton>
+            <IconButton onClick={downloadAll} label="Download transcript" disabled={!lines.length} className="hidden sm:inline-flex">
+              <Download className="size-4" />
+            </IconButton>
+            <IconButton onClick={reset} label="Clear">
+              <RotateCcw className="size-4" />
+            </IconButton>
+          </div>
         </div>
       </header>
 
@@ -500,7 +501,7 @@ export default function TranslatorApp() {
               </div>
             </label>
           )}
-          <DeviceField id="audio-output" label="Play through" value={selectedOutput} options={devices.outputs} onChange={devices.setOutputId} />
+          <DeviceField id="audio-output" label="Play through" value={selectedOutput} options={devices.outputs} onChange={devices.setOutputId} onFocus={() => void devices.ensurePermission()} />
         </div>
         <div className="mt-5 flex flex-col items-center gap-3 border-t border-border pt-5">
           <div className="relative">
@@ -527,7 +528,7 @@ export default function TranslatorApp() {
           </p>
           {mode === 'mic' && usingDeviceMic ? (
             <p className="max-w-sm text-center text-xs leading-relaxed text-fg-subtle">
-              Chosen mics are transcribed in short slices. Live captions stay on Browser microphone.
+              Chosen mics are transcribed in short slices. Live captions stay on Default.
             </p>
           ) : null}
           {mode === 'meeting' ? (
