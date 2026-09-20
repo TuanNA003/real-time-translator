@@ -2,15 +2,6 @@
 
 Speak, type, or share a meeting tab. The other side writes itself, line by line.
 
-- **Part 1:** microphone / typed text → Web Speech API → FastAPI → translation
-- **Part 2:** tab / system audio → MediaRecorder chunks → STT → translation
-- **Part 3:** restore punctuation + capitalization on each line
-- **Part 4:** hear the translation (xAI TTS, browser speech fallback)
-- **Part 5:** keep the session — autosave, history, restore, download
-- **Devices:** Listen from / Play through list connected mics, headsets, and speakers. Default is `Default (current device name)`
-- **Translator:** Grok or Google from a compact picker under the target language. ChatGPT and Gemini show as Pro (locked)
-- **Account:** user icon, Sign in with Google
-
 ## Stack
 
 - **Frontend:** React 19, Vite, Tailwind CSS 4, Web Speech API, getUserMedia, getDisplayMedia, speechSynthesis
