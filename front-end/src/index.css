@@ -26,10 +26,33 @@
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 }
 
+html[data-theme="light"] {
+  --color-bg: #f3f1ea;
+  --color-elevated: #fffcf6;
+  --color-surface: #e7e4d8;
+  --color-fg: #1c1d18;
+  --color-fg-muted: #5a5c54;
+  --color-fg-subtle: #73766c;
+  --color-accent: #1c1d18;
+  --color-accent-foreground: #f3f1ea;
+  --color-sage: #4d6a54;
+  --color-ring: #4d6a54;
+  --color-danger: #a63d32;
+  --color-live: #c45c3e;
+}
+
 @layer base {
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
   }
 
   html,

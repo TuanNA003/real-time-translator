@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
+import { ThemeToggle } from './ThemeToggle';
 import { LANGUAGES, languageById } from '../lib/languages';
 import { punctuateText, transcribeAndTranslate, translateText } from '../lib/api';
 import { ENGINES, engineById, isActiveEngine, loadEngine, saveEngine } from '../lib/engines';
@@ -423,7 +424,10 @@ export default function TranslatorApp() {
         <p className="mb-2 font-mono text-[11px] tracking-[0.22em] text-sage uppercase">Listen from any device</p>
         <div className="flex items-center justify-between gap-4">
           <h1 className="font-display text-4xl leading-none tracking-tight text-fg sm:text-5xl">Transly</h1>
-          <AccountMenu />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <AccountMenu />
+          </div>
         </div>
         <div className="mt-3 flex items-end justify-between gap-4">
           <p className="max-w-md text-sm leading-relaxed text-fg-muted">
