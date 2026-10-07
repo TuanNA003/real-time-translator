@@ -3,6 +3,7 @@ import base64
 import os
 import re
 import tempfile
+import unicodedata
 from typing import Optional
 
 import httpx
@@ -126,9 +127,7 @@ class AudioRequest(BaseModel):
     source: Optional[str] = None
     target: Optional[str] = None
     engine: Optional[str] = None
-
-
-class PunctuateRequest(BaseModel):
+    mixed: Optional[bool] = None
     text: str = Field(..., min_length=1, max_length=800)
 
 
@@ -221,7 +220,87 @@ async def mymemory_translate(text: str, source: str, target: str) -> str:
         return out
 
 
+async def chatgpt_translate(text: str, source: str, target: str) -> str:
+    api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("ChatGPT is unlocked for testing, but no OpenAI API key is set.")
+    snippet = text[:800]
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4.1-mini",
+                "temperature": 0,
+                "max_tokens": 400,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"Translate from {lang_name(source)} to {lang_name(target)}. "
+                            "Reply with the translation only."
+                        ),
+                    },
+                    {"role": "user", "content": snippet},
+                ],
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        out = (((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        if not out:
+            raise RuntimeError("ChatGPT returned an empty translation")
+        return out.strip('"')
+
+
+async def gemini_translate(text: str, source: str, target: str) -> str:
+    api_key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("Gemini is unlocked for testing, but no Gemini API key is set.")
+    snippet = text[:800]
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            url,
+            params={"key": api_key},
+            json={
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": (
+                                    f"Translate from {lang_name(source)} to {lang_name(target)}. "
+                                    f"Reply with the translation only.\n\n{snippet}"
+                                )
+                            }
+                        ],
+                    }
+                ],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 400},
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        parts = (((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+        out = (parts[0].get("text") if parts else "") or ""
+        out = out.strip()
+        if not out:
+            raise RuntimeError("Gemini returned an empty translation")
+        return out.strip('"')
+
+
+def pick_engine(engine: Optional[str]) -> str:
+    if engine in {"grok", "google", "chatgpt", "gemini"}:
+        return engine
+    return "grok"
+
+
 async def translate_plain(text: str, source: str, target: str, engine: str = "grok") -> tuple[str, str]:
+    if engine == "chatgpt":
+        return await chatgpt_translate(text, source, target), "chatgpt"
+    if engine == "gemini":
+        return await gemini_translate(text, source, target), "gemini"
     if source.lower() == target.lower():
         return text, engine if engine in {"grok", "google"} else "same"
     prefer_grok = (engine or "grok") != "google"
@@ -319,7 +398,88 @@ def stt_backend() -> str:
         return "unavailable"
 
 
-async def transcribe_xai(audio: bytes, mime: str, language: str) -> str:
+VIETNAMESE = re.compile(
+    r"[ăâêôơưđĂÂÊÔƠƯĐàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]"
+)
+
+
+def _kind_of(ch: str) -> str:
+    code = ord(ch)
+    if 0x3040 <= code <= 0x30FF or 0xFF66 <= code <= 0xFF9D:
+        return "ja"
+    if 0xAC00 <= code <= 0xD7AF or 0x1100 <= code <= 0x11FF:
+        return "ko"
+    if 0x0E00 <= code <= 0x0E7F:
+        return "th"
+    if 0x4E00 <= code <= 0x9FFF:
+        return "han"
+    if ch.isalpha() and "LATIN" in unicodedata.name(ch, ""):
+        return "latin"
+    return "skip"
+
+
+def segment_text(value: str) -> list[dict[str, str]]:
+    runs: list[dict[str, str]] = []
+    lead = ""
+    for ch in value:
+        kind = _kind_of(ch)
+        if kind == "skip":
+            if runs:
+                runs[-1]["text"] += ch
+            else:
+                lead += ch
+            continue
+        if runs and runs[-1]["kind"] == kind:
+            runs[-1]["text"] += ch
+        else:
+            runs.append({"kind": kind, "text": lead + ch})
+            lead = ""
+    for index, run in enumerate(runs):
+        if run["kind"] != "han":
+            continue
+        prev_kind = runs[index - 1]["kind"] if index else ""
+        next_kind = runs[index + 1]["kind"] if index + 1 < len(runs) else ""
+        if prev_kind == "ja" or next_kind == "ja":
+            run["kind"] = "ja"
+    merged: list[dict[str, str]] = []
+    for run in runs:
+        if merged and merged[-1]["kind"] == run["kind"]:
+            merged[-1]["text"] += run["text"]
+        else:
+            merged.append(dict(run))
+    segments = []
+    for run in merged:
+        text = run["text"].strip()
+        if not text:
+            continue
+        if run["kind"] == "han":
+            lang = "zh"
+        elif run["kind"] == "latin":
+            lang = "vi" if VIETNAMESE.search(text) else "en"
+        else:
+            lang = run["kind"]
+        segments.append({"lang": lang, "text": text})
+    return segments
+
+
+def same_lang(left: str, right: str) -> bool:
+    return left.split("-")[0].lower() == right.split("-")[0].lower()
+
+
+async def translate_segments(text: str, target: str, engine: str) -> tuple[list[dict[str, str]], str]:
+    parts = segment_text(text) or [{"lang": "en", "text": text.strip()}]
+    segments: list[dict[str, str]] = []
+    used = engine
+    for part in parts:
+        if same_lang(part["lang"], target):
+            segments.append({"lang": part["lang"], "source": part["text"], "target": part["text"]})
+            continue
+        translated, used = await translate_plain(part["text"], part["lang"], target, engine)
+        segments.append({"lang": part["lang"], "source": part["text"], "target": translated})
+    return segments, used
+
+
+async def transcribe_xai(audio: bytes, mime: str, language: str, mixed: bool = False) -> str:
     api_key = os.environ.get("XAI_API_KEY")
     if not api_key:
         raise RuntimeError("missing XAI_API_KEY")
@@ -328,11 +488,15 @@ async def transcribe_xai(audio: bytes, mime: str, language: str) -> str:
         response = await client.post(
             "https://api.x.ai/v1/stt",
             headers={"Authorization": f"Bearer {api_key}"},
-            data={
-                "model": "grok-voice-transcribe-1.0",
-                "language": language,
-                "format": "true",
-            },
+            data=(
+                {"model": "grok-voice-transcribe-2.0"}
+                if mixed
+                else {
+                    "model": "grok-voice-transcribe-1.0",
+                    "language": language,
+                    "format": "true",
+                }
+            ),
             files={"file": (filename, audio, mime or "application/octet-stream")},
         )
         response.raise_for_status()
@@ -356,9 +520,9 @@ def _whisper_transcribe_sync(audio: bytes, mime: str, language: str) -> str:
     return str(result.get("text") or "").strip()
 
 
-async def transcribe_audio(audio: bytes, mime: str, language: str) -> str:
+async def transcribe_audio(audio: bytes, mime: str, language: str, mixed: bool = False) -> str:
     if os.environ.get("XAI_API_KEY"):
-        return await transcribe_xai(audio, mime, language)
+        return await transcribe_xai(audio, mime, language, mixed)
     return await asyncio.to_thread(_whisper_transcribe_sync, audio, mime, language)
 
 
@@ -405,6 +569,18 @@ async def speak_text(request: SpeakRequest):
         return {"ok": True, "audio_base64": audio_b64, "mime": mime}
 
 
+@app.post("/api/translate-mixed")
+async def translate_mixed(request: TranslationRequest):
+    text = request.text.strip()
+    target = to_code(request.target_language or request.target or "en")
+    chosen = pick_engine(request.engine)
+    try:
+        segments, used = await translate_segments(text, target, chosen)
+        return {"ok": True, "segments": segments, "engine": used}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
+
+
 @app.post("/api/translate")
 async def translate_text(request: TranslationRequest):
     text = request.text.strip()
@@ -413,7 +589,7 @@ async def translate_text(request: TranslationRequest):
 
     source = to_code(request.source_language or request.source or "auto")
     target = to_code(request.target_language or request.target or "en")
-    chosen = request.engine if request.engine in {"grok", "google"} else "grok"
+    chosen = pick_engine(request.engine)
     try:
         translated, engine = await translate_plain(text, source, target, chosen)
         return {"ok": True, "translated_text": translated, "engine": engine}
@@ -433,27 +609,39 @@ async def transcribe_and_translate(request: AudioRequest):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid audio data") from exc
     if len(audio) < 1500:
-        return {"ok": True, "transcribed_text": "", "translated_text": ""}
+        return {"ok": True, "transcribed_text": "", "translated_text": "", "segments": []}
 
     source = lang_short(request.source_language or request.source or "en")
     target = to_code(request.target_language or request.target or "vi")
-    chosen = request.engine if request.engine in {"grok", "google"} else "grok"
+    chosen = pick_engine(request.engine)
     mime = request.mime or "audio/wav"
+    mixed = bool(request.mixed)
     try:
-        transcribed = await transcribe_audio(audio, mime, source)
-        transcribed = await run_punctuate(transcribed) if transcribed else ""
+        transcribed = await transcribe_audio(audio, mime, source, mixed)
+        if transcribed and not mixed:
+            transcribed = await run_punctuate(transcribed)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
 
     if not transcribed:
-        return {"ok": True, "transcribed_text": "", "translated_text": "", "engine": chosen}
+        return {"ok": True, "transcribed_text": "", "translated_text": "", "segments": [], "engine": chosen}
 
     try:
+        if mixed:
+            segments, used = await translate_segments(transcribed, target, chosen)
+            return {
+                "ok": True,
+                "transcribed_text": "\n".join(segment["source"] for segment in segments),
+                "translated_text": "\n".join(segment["target"] for segment in segments),
+                "segments": segments,
+                "engine": used,
+            }
         translated, used = await translate_plain(transcribed, source, target, chosen)
         return {
             "ok": True,
             "transcribed_text": transcribed,
             "translated_text": translated,
+            "segments": [{"lang": source, "source": transcribed, "target": translated}],
             "engine": used,
         }
     except Exception as exc:

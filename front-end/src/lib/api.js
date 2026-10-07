@@ -25,7 +25,7 @@ export async function translateText({ text, source, target, engine }) {
   return { ok: true, translated: data.translated_text ?? '', engine: data.engine ?? 'google' };
 }
 
-export async function transcribeAndTranslate({ audioBase64, mime, language, target, engine }) {
+export async function transcribeAndTranslate({ audioBase64, mime, language, target, engine, mixed }) {
   const response = await fetch(`${API_BASE}/api/transcribe-and-translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -35,6 +35,7 @@ export async function transcribeAndTranslate({ audioBase64, mime, language, targ
       source_language: language,
       target_language: target,
       engine,
+      mixed: Boolean(mixed),
     }),
   });
 
@@ -47,6 +48,30 @@ export async function transcribeAndTranslate({ audioBase64, mime, language, targ
     ok: true,
     transcribed: data.transcribed_text ?? '',
     translated: data.translated_text ?? '',
+    segments: Array.isArray(data.segments) ? data.segments : [],
+    engine: data.engine ?? engine ?? 'google',
+  };
+}
+
+export async function translateMixed({ text, target, engine }) {
+  const response = await fetch(`${API_BASE}/api/translate-mixed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      target_language: target,
+      engine,
+    }),
+  });
+
+  if (!response.ok) {
+    return { ok: false, error: await readError(response) };
+  }
+
+  const data = await response.json();
+  return {
+    ok: true,
+    segments: Array.isArray(data.segments) ? data.segments : [],
     engine: data.engine ?? engine ?? 'google',
   };
 }

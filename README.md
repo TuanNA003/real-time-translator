@@ -51,7 +51,8 @@ Chrome: http://localhost:5173 — keep both terminals running.
 
 1. **Listen from:** `Default (current device)` or a named headset / USB mic. Allow the microphone so device names appear.
 2. **Play through:** Default, speakers, or headphones — then press the speaker on a translation.
-3. **Translate with:** Grok (natural) or Google (fast). ChatGPT / Gemini stay Pro-locked.
+3. **Translate with:** Grok (natural) or Google (fast). ChatGPT and Gemini are unlocked for testing and need their own API keys.
+4. **Mixed input:** turn it on to hear more than one language in the same slice. Each language is shown separately and translated on its own. Single-language mode still shows a live translation while you speak.
 4. Mic: Start, speak a sentence. The source line should come back punctuated.
 5. Type a line without punctuation (`hello how are you`) and send — status should mention Grok or Google.
 6. Meeting tab: Start, pick a Chrome tab, enable Share tab audio (this is how you caption *speakers* / a call).
@@ -67,4 +68,4 @@ Default languages for meetings: English heard to Vietnamese written (swap anytim
 - A chosen hardware mic is transcribed in ~3s slices. Live captions stay on **Default**.
 - Tab capture needs Chrome and a tick on share-audio.
 - Sessions live in `localStorage` on this browser.
-- ChatGPT and Gemini are listed for the Pro demo only; they do not call those APIs yet.
+- ChatGPT and Gemini are selectable, but the backend only calls them when `OPENAI_API_KEY` or `GEMINI_API_KEY` is set. Otherwise use Grok or Google.

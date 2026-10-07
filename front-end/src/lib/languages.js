@@ -14,3 +14,8 @@ export const LANGUAGES = [
 export function languageById(id) {
   return LANGUAGES.find((lang) => lang.id === id) ?? LANGUAGES[0];
 }
+
+export function languageLabel(code) {
+  const short = String(code || '').split('-')[0].toLowerCase();
+  return LANGUAGES.find((lang) => lang.id === short || lang.translate.toLowerCase().startsWith(short))?.native ?? code;
+}

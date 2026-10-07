@@ -1,14 +1,14 @@
 export const ENGINES = [
   { id: 'grok', label: 'Grok', hint: 'Natural' },
   { id: 'google', label: 'Google', hint: 'Fast' },
-  { id: 'chatgpt', label: 'ChatGPT', hint: 'Paid plan', pro: true },
-  { id: 'gemini', label: 'Gemini', hint: 'Paid plan', pro: true },
+  { id: 'chatgpt', label: 'ChatGPT', hint: 'Test' },
+  { id: 'gemini', label: 'Gemini', hint: 'Test' },
 ];
 
 const STORAGE_KEY = 'loi-engine-v1';
 
 export function isActiveEngine(id) {
-  return id === 'grok' || id === 'google';
+  return id === 'grok' || id === 'google' || id === 'chatgpt' || id === 'gemini';
 }
 
 export function engineById(id) {

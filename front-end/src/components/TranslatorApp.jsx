@@ -17,9 +17,9 @@ import {
 } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
 import { ThemeToggle } from './ThemeToggle';
-import { LANGUAGES, languageById } from '../lib/languages';
-import { punctuateText, transcribeAndTranslate, translateText } from '../lib/api';
-import { ENGINES, engineById, isActiveEngine, loadEngine, saveEngine } from '../lib/engines';
+import { LANGUAGES, languageById, languageLabel } from '../lib/languages';
+import { punctuateText, transcribeAndTranslate, translateMixed, translateText } from '../lib/api';
+import { ENGINES, engineById, loadEngine, saveEngine } from '../lib/engines';
 import {
   archiveDraft,
   clearCurrent,
@@ -95,25 +95,18 @@ function IconButton({ onClick, label, disabled, pressed, className = '', childre
   );
 }
 
-function EnginePicker({ value, onChange, onLocked }) {
+function EnginePicker({ value, onChange }) {
   return (
     <select
       id="translate-engine"
       aria-label="Translate with"
       value={value}
-      onChange={(event) => {
-        const id = event.target.value;
-        if (!isActiveEngine(id)) {
-          onLocked(engineById(id).label);
-          return;
-        }
-        onChange(id);
-      }}
+      onChange={(event) => onChange(event.target.value)}
       className="h-9 w-auto max-w-full self-start appearance-none rounded-md border border-border bg-surface px-2.5 text-xs text-fg outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
     >
       {ENGINES.map((engine) => (
         <option key={engine.id} value={engine.id}>
-          {engine.pro ? `${engine.label} · Pro` : `${engine.label} · ${engine.hint}`}
+          {`${engine.label} · ${engine.hint}`}
         </option>
       ))}
     </select>
@@ -123,6 +116,8 @@ function EnginePicker({ value, onChange, onLocked }) {
 function engineStatus(liveLabel, engine) {
   if (engine === 'grok') return `${liveLabel} · Grok`;
   if (engine === 'google') return `${liveLabel} · Google`;
+  if (engine === 'chatgpt') return `${liveLabel} · ChatGPT`;
+  if (engine === 'gemini') return `${liveLabel} · Gemini`;
   return liveLabel;
 }
 
@@ -140,6 +135,8 @@ export default function TranslatorApp() {
   const [speakingId, setSpeakingId] = useState(null);
   const [hydrated, setHydrated] = useState(false);
   const [engineId, setEngineId] = useState('grok');
+  const [mixed, setMixed] = useState(false);
+  const [liveTarget, setLiveTarget] = useState('');
   const source = languageById(sourceId);
   const target = languageById(targetId);
   const speech = useSpeechRecognition(source.speech);
@@ -158,11 +155,16 @@ export default function TranslatorApp() {
   const targetSpeechRef = useRef(target.speech);
   const outputIdRef = useRef(devices.outputId);
   const engineRef = useRef(engineId);
+  const mixedRef = useRef(false);
+  const liveTargetRef = useRef('');
+  const liveGenRef = useRef(0);
+  const pendingIdsRef = useRef(new Set());
   sourceCodeRef.current = source.translate;
   targetCodeRef.current = target.translate;
   targetSpeechRef.current = target.speech;
   outputIdRef.current = devices.outputId;
   engineRef.current = engineId;
+  mixedRef.current = mixed;
   const live = speech.listening || tab.capturing || mic.capturing;
   const usingDeviceMic = mode === 'mic' && !devices.usingBrowserMic;
 
@@ -175,6 +177,7 @@ export default function TranslatorApp() {
       setStatus('Restored last session.');
     }
     setEngineId(loadEngine());
+    setMixed(window.localStorage.getItem('transly-mixed-v1') === '1');
     setSessions(loadSessions());
     setHydrated(true);
   }, []);
@@ -209,24 +212,60 @@ export default function TranslatorApp() {
   }, []);
 
   const pushLine = useCallback(async (text) => {
-    queueRef.current.push(text);
+    if (mixedRef.current) {
+      setBusy(true);
+      setStatus('Splitting languages…');
+      const mixedResult = await translateMixed({
+        text,
+        target: targetCodeRef.current,
+        engine: engineRef.current,
+      });
+      setBusy(false);
+      if (!mixedResult.ok) {
+        setStatus(mixedResult.error);
+        return;
+      }
+      setLines((prev) => [
+        ...prev,
+        ...mixedResult.segments.map((segment) => ({
+          id: crypto.randomUUID(),
+          source: segment.source,
+          target: segment.target,
+          sourceLang: segment.lang,
+        })),
+      ]);
+      setStatus(engineStatus('Ready', mixedResult.engine));
+      return;
+    }
+    const id = crypto.randomUUID();
+    const preview = liveTargetRef.current;
+    pendingIdsRef.current.add(id);
+    setLines((prev) => [...prev, { id, source: text, target: preview }]);
+    liveTargetRef.current = '';
+    setLiveTarget('');
+    queueRef.current.push({ id, text });
     if (translatingRef.current) return;
     translatingRef.current = true;
     setBusy(true);
     while (queueRef.current.length) {
       const next = queueRef.current.shift();
-      setStatus('Restoring punctuation…');
-      const polished = await punctuateText(next);
-      const sourceText = polished.ok ? polished.text : next;
-      setStatus('Translating…');
+      const polished = await punctuateText(next.text);
+      const sourceText = polished.ok ? polished.text : next.text;
       const result = await translateText({
         text: sourceText,
         source: sourceCodeRef.current,
         target: targetCodeRef.current,
         engine: engineRef.current,
       });
+      pendingIdsRef.current.delete(next.id);
+      setLines((prev) =>
+        prev.map((line) =>
+          line.id === next.id
+            ? { ...line, source: sourceText, target: result.ok ? result.translated : line.target || sourceText }
+            : line,
+        ),
+      );
       if (result.ok) {
-        setLines((prev) => [...prev, { id: crypto.randomUUID(), source: sourceText, target: result.translated }]);
         const listening = mode === 'meeting' ? 'Capturing tab audio…' : 'Listening';
         setStatus(engineStatus(listening, result.engine));
       } else {
@@ -251,6 +290,7 @@ export default function TranslatorApp() {
         language: sourceCodeRef.current,
         target: targetCodeRef.current,
         engine: engineRef.current,
+        mixed: mixedRef.current,
       });
       if (!result.ok) {
         setStatus(result.error);
@@ -260,7 +300,19 @@ export default function TranslatorApp() {
         setStatus(mode === 'meeting' ? 'Capturing tab audio…' : 'Listening');
         continue;
       }
-      setLines((prev) => [...prev, { id: crypto.randomUUID(), source: result.transcribed, target: result.translated }]);
+      if (mixedRef.current && result.segments.length) {
+        setLines((prev) => [
+          ...prev,
+          ...result.segments.map((segment) => ({
+            id: crypto.randomUUID(),
+            source: segment.source,
+            target: segment.target,
+            sourceLang: segment.lang,
+          })),
+        ]);
+      } else {
+        setLines((prev) => [...prev, { id: crypto.randomUUID(), source: result.transcribed, target: result.translated }]);
+      }
       const listening = mode === 'meeting' ? 'Capturing tab audio…' : 'Listening';
       setStatus(engineStatus(listening, result.engine));
     }
@@ -273,6 +325,31 @@ export default function TranslatorApp() {
       void pushLine(text);
     });
   }, [speech, pushLine]);
+
+  useEffect(() => {
+    const text = speech.interim.trim();
+    if (text.length < 2) {
+      liveGenRef.current += 1;
+      liveTargetRef.current = '';
+      setLiveTarget('');
+      return;
+    }
+    const gen = ++liveGenRef.current;
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        const result = await translateText({
+          text,
+          source: sourceCodeRef.current,
+          target: targetCodeRef.current,
+          engine: 'google',
+        });
+        if (liveGenRef.current !== gen || !result.ok) return;
+        liveTargetRef.current = result.translated;
+        setLiveTarget(result.translated);
+      })();
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [speech.interim]);
 
   useEffect(() => {
     tab.setOnChunk((base64, mime) => {
@@ -288,11 +365,13 @@ export default function TranslatorApp() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [lines, speech.interim]);
+  }, [lines, speech.interim, liveTarget]);
 
   useEffect(() => {
     if (!readAloud || !lines.length) return;
     const last = lines[lines.length - 1];
+    if (pendingIdsRef.current.has(last.id)) return;
+    if (!last.target.trim()) return;
     if (lastSpokenRef.current === last.id) return;
     lastSpokenRef.current = last.id;
     void speakLine(last);
@@ -313,12 +392,12 @@ export default function TranslatorApp() {
 
   const startMicCapture = async () => {
     await devices.ensurePermission();
-    if (devices.usingBrowserMic) {
+    if (!mixedRef.current && devices.usingBrowserMic) {
       speech.start();
       setStatus('Listening');
       return;
     }
-    const ok = await mic.start(devices.inputId);
+    const ok = await mic.start(devices.usingBrowserMic ? '' : devices.inputId);
     if (ok) setStatus(`Listening · ${devices.inputLabel}`);
   };
 
@@ -342,12 +421,12 @@ export default function TranslatorApp() {
     stopAllCapture();
     window.setTimeout(() => {
       void (async () => {
-        if (id === BROWSER_MIC_ID) {
+        if (!mixedRef.current && id === BROWSER_MIC_ID) {
           speech.start();
           setStatus('Listening');
           return;
         }
-        const ok = await mic.start(id);
+        const ok = await mic.start(id === BROWSER_MIC_ID ? '' : id);
         if (ok) setStatus('Listening');
       })();
     }, 80);
@@ -398,7 +477,17 @@ export default function TranslatorApp() {
     setTyped('');
     clearCurrent();
     lastSpokenRef.current = null;
+    liveTargetRef.current = '';
+    setLiveTarget('');
     setStatus('Cleared — previous session kept in history.');
+  };
+
+  const toggleMixed = () => {
+    const next = !mixed;
+    setMixed(next);
+    window.localStorage.setItem('transly-mixed-v1', next ? '1' : '0');
+    if (live) stopAllCapture();
+    setStatus(next ? 'Mixed input — each language is split, then translated on its own.' : 'Single language.');
   };
 
   const restoreSession = (session) => {
@@ -471,7 +560,14 @@ export default function TranslatorApp() {
           </button>
         </div>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-start">
-          <LanguageField id="source-lang" label="Heard as" value={sourceId} exclude={targetId} onChange={setSourceId} />
+          {mixed ? (
+            <label className="flex min-w-0 flex-1 flex-col gap-2">
+              <span className="text-xs font-medium tracking-wide text-fg-subtle uppercase">Heard as</span>
+              <div className="flex h-11 items-center rounded-md border border-border bg-surface px-3 text-sm text-fg">Auto</div>
+            </label>
+          ) : (
+            <LanguageField id="source-lang" label="Heard as" value={sourceId} exclude={targetId} onChange={setSourceId} />
+          )}
           <button
             type="button"
             className="mx-auto inline-flex size-11 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg sm:mt-7"
@@ -482,14 +578,19 @@ export default function TranslatorApp() {
             <ArrowLeftRight className="size-4" />
           </button>
           <div className="flex min-w-0 flex-col gap-2">
-            <LanguageField id="target-lang" label="Written as" value={targetId} exclude={sourceId} onChange={setTargetId} />
-            <EnginePicker
-              value={engineId}
-              onChange={changeEngine}
-              onLocked={(label) => setStatus(`${label} is a Pro translator.`)}
-            />
+            <LanguageField id="target-lang" label="Written as" value={targetId} exclude={mixed ? '' : sourceId} onChange={setTargetId} />
+            <EnginePicker value={engineId} onChange={changeEngine} />
           </div>
         </div>
+        <button
+          type="button"
+          aria-pressed={mixed}
+          onClick={toggleMixed}
+          className={`mt-3 flex h-11 w-full items-center justify-between rounded-md border px-3 text-left text-sm ${mixed ? 'border-sage bg-surface text-fg' : 'border-border text-fg-muted'}`}
+        >
+          <span>Mixed input</span>
+          <span className="font-mono text-[11px] tracking-wide uppercase">{mixed ? 'On' : 'Off'}</span>
+        </button>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           {mode === 'mic' ? (
             <DeviceField
@@ -535,7 +636,11 @@ export default function TranslatorApp() {
             {speech.error ?? tab.error ?? mic.error ?? status}
             {busy ? ' · working' : ''}
           </p>
-          {mode === 'mic' && usingDeviceMic ? (
+          {mixed ? (
+            <p className="max-w-sm text-center text-xs leading-relaxed text-fg-subtle">
+              Mixed input listens in short slices, splits each language, then translates that part on its own.
+            </p>
+          ) : mode === 'mic' && usingDeviceMic ? (
             <p className="max-w-sm text-center text-xs leading-relaxed text-fg-subtle">
               Chosen mics are transcribed in short slices. Live captions stay on Default.
             </p>
@@ -567,14 +672,19 @@ export default function TranslatorApp() {
 
       <div className="mt-4 grid flex-1 gap-4 md:grid-cols-2">
         <article className="flex min-h-[240px] flex-col rounded-xl border border-border bg-elevated p-5">
-          <h2 className="text-xs font-medium tracking-wide text-fg-subtle uppercase">{source.native}</h2>
+          <h2 className="text-xs font-medium tracking-wide text-fg-subtle uppercase">{mixed ? 'Heard' : source.native}</h2>
           <div ref={scrollRef} className="mt-3 flex-1 space-y-3 overflow-y-auto text-[15px] leading-relaxed">
             {lines.length === 0 && !speech.interim ? (
               <p className="text-fg-subtle">Heard speech lands here.</p>
             ) : (
               <>
                 {lines.map((line) => (
-                  <p key={line.id}>{line.source}</p>
+                  <p key={line.id}>
+                    {line.sourceLang ? (
+                      <span className="mr-2 font-mono text-[10px] tracking-wide text-sage uppercase">{languageLabel(line.sourceLang)}</span>
+                    ) : null}
+                    {line.source}
+                  </p>
                 ))}
                 {speech.interim ? <p className="text-fg-muted italic">{speech.interim}</p> : null}
               </>
@@ -587,12 +697,13 @@ export default function TranslatorApp() {
             <p className="font-mono text-[11px] tracking-wide text-fg-subtle">{engineById(engineId).label}</p>
           </div>
           <div className="mt-3 flex-1 space-y-3 overflow-y-auto text-[15px] leading-relaxed">
-            {lines.length === 0 ? (
-              <p className="text-fg-subtle">Translation appears line by line.</p>
+            {lines.length === 0 && !liveTarget ? (
+              <p className="text-fg-subtle">Translation appears as you speak.</p>
             ) : (
-              lines.map((line) => (
+              <>
+                {lines.map((line) => (
                 <div key={line.id} className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 flex-1">{line.target}</p>
+                  <p className="min-w-0 flex-1">{line.target || '…'}</p>
                   <button
                     type="button"
                     className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-sm text-fg-subtle hover:bg-surface hover:text-fg ${speakingId === line.id ? 'text-sage' : ''}`}
@@ -603,7 +714,9 @@ export default function TranslatorApp() {
                     <Volume2 className="size-3.5" />
                   </button>
                 </div>
-              ))
+                ))}
+                {speech.interim ? <p className="text-fg-muted italic">{liveTarget || '…'}</p> : null}
+              </>
             )}
           </div>
         </article>
