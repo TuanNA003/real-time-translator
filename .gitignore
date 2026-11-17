@@ -35,6 +35,7 @@ __pycache__/
 venv/
 
 # Secrets
+back-end/keys.local.json
 back-end/.env
 front-end/.env
 front-end/.env.local

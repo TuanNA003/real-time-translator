@@ -5,6 +5,7 @@ import {
   Download,
   Headphones,
   History,
+  KeyRound,
   Mic,
   MicOff,
   Monitor,
@@ -18,7 +19,7 @@ import {
 import { AccountMenu } from './AccountMenu';
 import { ThemeToggle } from './ThemeToggle';
 import { LANGUAGES, languageById, languageLabel } from '../lib/languages';
-import { punctuateText, transcribeAndTranslate, translateMixed, translateText } from '../lib/api';
+import { getKeyStatus, punctuateText, saveApiKeys, transcribeAndTranslate, translateMixed, translateText } from '../lib/api';
 import { ENGINES, engineById, loadEngine, saveEngine } from '../lib/engines';
 import {
   archiveDraft,
@@ -121,6 +122,80 @@ function engineStatus(liveLabel, engine) {
   return liveLabel;
 }
 
+
+function ApiKeyPanel({ open, onClose }) {
+  const [openai, setOpenai] = useState('');
+  const [gemini, setGemini] = useState('');
+  const [status, setStatus] = useState(null);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    getKeyStatus().then(setStatus).catch(() => setStatus(null));
+  }, [open]);
+
+  if (!open) return null;
+
+  const save = async () => {
+    setMessage('Saving…');
+    const result = await saveApiKeys({ openai, gemini });
+    if (!result.ok) {
+      setMessage(result.error || 'Could not save keys.');
+      return;
+    }
+    setStatus(result);
+    setOpenai('');
+    setGemini('');
+    setMessage('Saved on this machine. Leave a field blank to keep the current key.');
+  };
+
+  const badge = (on) => (on ? 'set' : 'missing');
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/30 px-4 pt-24" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-border bg-elevated p-5 shadow-lg" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-medium text-fg">API keys</h2>
+          <button type="button" onClick={onClose} className="text-fg-muted hover:text-fg" aria-label="Close">
+            <X className="size-4" />
+          </button>
+        </div>
+        <p className="mb-4 text-sm leading-relaxed text-fg-muted">
+          Paste a key when you have one. It is saved only on this computer, not in Git. An environment variable still wins if both are set.
+        </p>
+        <label className="mb-3 flex flex-col gap-1.5">
+          <span className="text-xs font-medium tracking-wide text-fg-subtle uppercase">OpenAI · ChatGPT · {badge(status?.openai)}</span>
+          <input
+            type="password"
+            value={openai}
+            onChange={(event) => setOpenai(event.target.value)}
+            placeholder="sk-…"
+            className="h-11 rounded-md border border-border bg-surface px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            autoComplete="off"
+          />
+        </label>
+        <label className="mb-4 flex flex-col gap-1.5">
+          <span className="text-xs font-medium tracking-wide text-fg-subtle uppercase">Gemini · {badge(status?.gemini)}</span>
+          <input
+            type="password"
+            value={gemini}
+            onChange={(event) => setGemini(event.target.value)}
+            placeholder="AIza…"
+            className="h-11 rounded-md border border-border bg-surface px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            autoComplete="off"
+          />
+        </label>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-fg-subtle">{message}</p>
+          <button type="button" onClick={save} className="h-10 shrink-0 rounded-md bg-accent px-4 text-sm text-accent-foreground">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TranslatorApp() {
   const [sourceId, setSourceId] = useState('en');
   const [targetId, setTargetId] = useState('vi');
@@ -136,6 +211,7 @@ export default function TranslatorApp() {
   const [hydrated, setHydrated] = useState(false);
   const [engineId, setEngineId] = useState('grok');
   const [mixed, setMixed] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   const [liveTarget, setLiveTarget] = useState('');
   const source = languageById(sourceId);
   const target = languageById(targetId);
@@ -509,11 +585,15 @@ export default function TranslatorApp() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 py-6 sm:px-8 sm:py-10">
+      <ApiKeyPanel open={keysOpen} onClose={() => setKeysOpen(false)} />
       <header className="mb-8">
         <p className="mb-2 font-mono text-[11px] tracking-[0.22em] text-sage uppercase">Listen from any device</p>
         <div className="flex items-center justify-between gap-4">
           <h1 className="font-display text-4xl leading-none tracking-tight text-fg sm:text-5xl">Transly</h1>
           <div className="flex items-center gap-2">
+            <IconButton onClick={() => setKeysOpen(true)} label="API keys for ChatGPT and Gemini">
+              <KeyRound className="size-4" />
+            </IconButton>
             <ThemeToggle />
             <AccountMenu />
           </div>

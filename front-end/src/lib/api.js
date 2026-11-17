@@ -109,3 +109,21 @@ export async function speakText({ text, language }) {
     mime: data.mime ?? 'audio/mpeg',
   };
 }
+
+export async function getKeyStatus() {
+  const response = await fetch(`${API_BASE}/api/keys/status`);
+  if (!response.ok) return { ok: false, openai: false, gemini: false, xai: false };
+  return response.json();
+}
+
+export async function saveApiKeys({ openai, gemini }) {
+  const response = await fetch(`${API_BASE}/api/keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ openai, gemini }),
+  });
+  if (!response.ok) {
+    return { ok: false, error: await readError(response) };
+  }
+  return response.json();
+}

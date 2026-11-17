@@ -1,9 +1,11 @@
 import asyncio
 import base64
+import json
 import os
 import re
 import tempfile
 import unicodedata
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -29,6 +31,41 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+KEYS_FILE = Path(__file__).with_name("keys.local.json")
+
+def load_saved_keys() -> dict:
+    if not KEYS_FILE.exists():
+        return {}
+    try:
+        data = json.loads(KEYS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+def save_saved_keys(data: dict) -> None:
+    KEYS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+def get_key(*names: str) -> str:
+    """Environment variable wins, then a key saved from the UI."""
+    for name in names:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    saved = load_saved_keys()
+    for name in names:
+        value = str(saved.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+def key_status() -> dict:
+    return {
+        "openai": bool(get_key("OPENAI_API_KEY")),
+        "gemini": bool(get_key("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+        "xai": bool(get_key("XAI_API_KEY")),
+    }
+
 
 NAME_TO_CODE = {
     "vietnamese": "vi",
@@ -221,9 +258,9 @@ async def mymemory_translate(text: str, source: str, target: str) -> str:
 
 
 async def chatgpt_translate(text: str, source: str, target: str) -> str:
-    api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    api_key = get_key("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("ChatGPT is unlocked for testing, but no OpenAI API key is set.")
+        raise RuntimeError("ChatGPT needs an OpenAI API key. Enter it in the app or set OPENAI_API_KEY.")
     snippet = text[:800]
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(
@@ -254,9 +291,9 @@ async def chatgpt_translate(text: str, source: str, target: str) -> str:
 
 
 async def gemini_translate(text: str, source: str, target: str) -> str:
-    api_key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+    api_key = get_key("GEMINI_API_KEY", "GOOGLE_API_KEY")
     if not api_key:
-        raise RuntimeError("Gemini is unlocked for testing, but no Gemini API key is set.")
+        raise RuntimeError("Gemini needs an API key. Enter it in the app or set GEMINI_API_KEY.")
     snippet = text[:800]
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     async with httpx.AsyncClient(timeout=20.0) as client:
@@ -646,6 +683,37 @@ async def transcribe_and_translate(request: AudioRequest):
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Translation failed: {exc}") from exc
+
+
+
+class KeyUpdate(BaseModel):
+    openai: Optional[str] = None
+    gemini: Optional[str] = None
+
+
+@app.get("/api/keys/status")
+async def keys_status():
+    return {"ok": True, **key_status()}
+
+
+@app.post("/api/keys")
+async def update_keys(request: KeyUpdate):
+    """Save keys entered in the UI. Empty string clears a saved key. Env vars still win."""
+    saved = load_saved_keys()
+    if request.openai is not None:
+        value = request.openai.strip()
+        if value:
+            saved["OPENAI_API_KEY"] = value
+        else:
+            saved.pop("OPENAI_API_KEY", None)
+    if request.gemini is not None:
+        value = request.gemini.strip()
+        if value:
+            saved["GEMINI_API_KEY"] = value
+        else:
+            saved.pop("GEMINI_API_KEY", None)
+    save_saved_keys(saved)
+    return {"ok": True, **key_status()}
 
 
 if __name__ == "__main__":

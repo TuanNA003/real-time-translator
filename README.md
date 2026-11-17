@@ -69,3 +69,29 @@ Default languages for meetings: English heard to Vietnamese written (swap anytim
 - Tab capture needs Chrome and a tick on share-audio.
 - Sessions live in `localStorage` on this browser.
 - ChatGPT and Gemini are selectable, but the backend only calls them when `OPENAI_API_KEY` or `GEMINI_API_KEY` is set. Otherwise use Grok or Google.
+
+
+## API keys for ChatGPT and Gemini
+
+Grok still uses `XAI_API_KEY`. Google needs no key.
+
+ChatGPT and Gemini stay in the engine list. They only run when a key is present.
+
+Two ways to set a key, in this order of priority:
+
+1. Environment variable, if you already have one: `OPENAI_API_KEY`, `GEMINI_API_KEY`.
+2. In the app: the key icon next to the theme toggle. Paste the key and save. It is written to `back-end/keys.local.json`, which is gitignored.
+
+An environment variable wins over a key saved in the app. Leave a field blank to keep the current saved key. Saving an empty value does not clear a key that came from the environment.
+
+## Benchmark speed and quality
+
+From the back-end folder, with the same keys:
+
+```bash
+cd back-end
+source venv/bin/activate
+python benchmark.py
+```
+
+The script runs the six report sentences through every engine that has a key, plus Google. It prints latency and a character similarity score against one reference. The score is a hint, not a ranking of models in general: read the lines, especially the idiom and the “natural tone” sentence.
